@@ -1,0 +1,35 @@
+# MOYU 配置
+# 复制此文件为 config.yaml，填入你的 API 信息
+
+memory:
+  # 记忆数据存储路径
+  storage_path: "./memory_data"
+  
+  # TEMPR 检索权重（总和不必等于1，会自动归一化）
+  weights:
+    semantic: 0.5
+    keyword: 0.3
+    recency: 0.2
+
+api:
+  # LLM API 配置（用于 embedding 和知识图谱提取）
+  # 支持所有 OpenAI 兼容格式
+  provider: "openai"  # 或 deepseek, minimax, doubao 等
+  api_key: "your-api-key-here"
+  base_url: "https://api.openai.com/v1"
+  embedding_model: "text-embedding-3-small"
+  chat_model: "gpt-4o-mini"
+
+learner:
+  # 学习信号模块配置
+  enabled: true
+  # 触发词列表（可按自己的说话习惯修改）
+  correction_signals:
+    - "不是"
+    - "不对"
+    - "错了"
+    - "应该是"
+    - "不要"
+    - "记住"
+    - "我告诉过你"
+    - "你又"
