@@ -1,29 +1,29 @@
-# MOYU 配置
-# 复制此文件为 config.yaml，填入你的 API 信息
+# MOYU Configuration
+# Copy this file to config.yaml and fill in your API info
 
 memory:
-  # 记忆数据存储路径
+  # Memory data storage path
   storage_path: "./memory_data"
   
-  # TEMPR 检索权重（总和不必等于1，会自动归一化）
+  # TEMPR retrieval weights (sum doesn't need to be 1, will be auto-normalized)
   weights:
     semantic: 0.5
     keyword: 0.3
     recency: 0.2
 
 api:
-  # LLM API 配置（用于 embedding 和知识图谱提取）
-  # 支持所有 OpenAI 兼容格式
-  provider: "openai"  # 或 deepseek, minimax, doubao 等
+  # LLM API configuration (for embedding and knowledge graph extraction)
+  # Supports all OpenAI-compatible formats
+  provider: "openai"  # or deepseek, minimax, doubao, etc.
   api_key: "your-api-key-here"
   base_url: "https://api.openai.com/v1"
   embedding_model: "text-embedding-3-small"
   chat_model: "gpt-4o-mini"
 
 learner:
-  # 学习信号模块配置
+  # Learner signal module configuration
   enabled: true
-  # 触发词列表（可按自己的说话习惯修改）
+  # Trigger word list (modify per speaking habits. Leave empty to use built-in defaults)
   correction_signals:
     - "不是"
     - "不对"
@@ -32,4 +32,29 @@ learner:
     - "不要"
     - "记住"
     - "我告诉过你"
+    - "我说过"
+    - "别"
+    - "别再"
     - "你又"
+    - "还说"
+    # English
+    - "no"
+    - "wrong"
+    - "don't"
+    - "stop"
+    - "hey"
+    - "remember"
+    - "i told you"
+    - "not"
+    - "never"
+    - "hold on"
+    - "wait"
+    - "actually"
+    - "correction"
+
+security:
+  # Security module configuration
+  # Auto-generated after first run of `python3 security.py setup` to set password
+  # safe_word_hash: ""  # SHA256 hash, plaintext not stored
+  lockout_threshold: 3   # Lock after this many consecutive failures
+  lockout_minutes: 30    # Lockout duration in minutes

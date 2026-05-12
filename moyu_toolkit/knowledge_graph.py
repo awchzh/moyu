@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-knowledge_graph.py — MOYU 轻量知识图谱
+knowledge_graph.py — MOYU Lightweight Knowledge Graph
 
-从对话中自动提取实体和关系，辅助记忆检索。
-JSON 文件存储，零数据库依赖。
+Auto-extracts entities and relations from conversation to assist memory retrieval.
+JSON file storage, zero database dependency.
 
-用法：
-    python3 knowledge_graph.py extract <文本>  # 提取关系
-    python3 knowledge_graph.py search <query>  # 搜索实体
-    python3 knowledge_graph.py stats           # 统计
+Usage:
+    python3 knowledge_graph.py extract <text>  # Extract relations
+    python3 knowledge_graph.py search <query>  # Search entities
+    python3 knowledge_graph.py stats           # Show statistics
 """
 
 import json
@@ -20,11 +20,11 @@ from typing import List, Dict
 STORAGE_PATH = os.environ.get("MOYU_STORAGE", os.path.join(os.path.dirname(__file__), "memory_data"))
 
 RELATION_TYPES = {
-    "works_at": "在...工作", "uses": "使用", "lives_in": "住在",
-    "manages": "管理", "created": "创建了", "owns": "拥有",
-    "knows": "认识", "prefers": "偏好", "is_a": "是一种",
-    "belongs_to": "属于", "located_at": "位于", "develops": "开发",
-    "depends_on": "依赖", "related_to": "相关于",
+    "works_at": "works at", "uses": "uses", "lives_in": "lives in",
+    "manages": "manages", "created": "created", "owns": "owns",
+    "knows": "knows", "prefers": "prefers", "is_a": "is a",
+    "belongs_to": "belongs to", "located_at": "located at", "develops": "develops",
+    "depends_on": "depends on", "related_to": "related to",
 }
 
 
@@ -51,7 +51,7 @@ def _normalize(name: str) -> str:
 
 
 def _call_llm(prompt: str) -> str:
-    """调用配置的 LLM API"""
+    """Call the configured LLM API"""
     import yaml, requests as rq
     cfg_path = os.path.join(os.path.dirname(__file__), "config.yaml")
     if not os.path.exists(cfg_path):
@@ -67,7 +67,7 @@ def _call_llm(prompt: str) -> str:
     try:
         resp = rq.post(url, headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
                        json={"model": model, "messages": [
-                           {"role": "system", "content": "你是一个精准的关系提取器。"},
+                           {"role": "system", "content": "You are a precise relation extractor."},
                            {"role": "user", "content": prompt}
                        ], "temperature": 0.1}, timeout=15)
         if resp.status_code == 200:
@@ -78,11 +78,11 @@ def _call_llm(prompt: str) -> str:
 
 
 def extract_entities(text: str) -> List[Dict]:
-    prompt = ("从以下文本中提取实体关系三元组。格式：实体A | 关系 | 实体B\n"
-              "关系类型: " + ", ".join(RELATION_TYPES.keys()) +
-              "\n无结果则输出：无\n\n文本：" + text[:1500])
+    prompt = ("Extract entity-relation triples from the following text. Format: EntityA | Relation | EntityB\n"
+              "Relation types: " + ", ".join(RELATION_TYPES.keys()) +
+              "\nIf none: output \"none\"\n\nText: " + text[:1500])
     reply = _call_llm(prompt)
-    if not reply or reply.strip() == "无":
+    if not reply or reply.strip() == "none":
         return []
     triples = []
     for line in reply.split("\n"):
@@ -141,22 +141,22 @@ def search(query: str) -> list:
 
 def stats():
     kg = _load()
-    print(f"\n📊 MOYU 知识图谱")
+    print(f"\n📊 MOYU Knowledge Graph")
     print("=" * 50)
-    print(f"实体: {len(kg['entities'])} | 关系: {len(kg['relations'])}")
+    print(f"Entities: {len(kg['entities'])} | Relations: {len(kg['relations'])}")
     top = sorted(kg["entities"].items(), key=lambda x: -x[1].get("mention_count", 0))[:5]
     for eid, data in top:
-        print(f"  {data['name']} ({data.get('mention_count', 0)}次)")
+        print(f"  {data['name']} ({data.get('mention_count', 0)} appearances)")
 
 
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:
-        print("用法: extract <文本> | search <query> | stats")
+        print("Usage: extract <text> | search <query> | stats")
         sys.exit(0)
     cmd = sys.argv[1]
     if cmd == "extract":
-        print(f"新增 {add_triples(' '.join(sys.argv[2:]))} 条关系")
+        print(f"Added {add_triples(' '.join(sys.argv[2:]))} relations")
     elif cmd == "search":
         for h in search(" ".join(sys.argv[2:])):
             print(f"#{h['entity']}:")

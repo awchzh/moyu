@@ -1,0 +1,65 @@
+# MOYU .gitignore
+# 只跟踪 moyu_toolkit/ 和公开文档
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# 项目私有 — 不属于公开工具包
+.config_backup/
+.logs/
+.learnings/
+.digest_reminder.json
+logs/
+学识库/
+/SOUL.md
+/墨羽项目.md
+/墨羽项目_学习者模块设计.md
+/墨白资产清单.md
+/暗号表.md
+/信息摄取流程.md
+/感知源总览.md
+/叶轻眠迁移手册.md
+/信号清单.md
+/boundaries.md
+/preferences.md
+/covenant.md
+/ability_inventory.md
+/avatar.png
+/first_voice.mp3
+/reading_progress.md
+/轮回永叹_指路说明.md
+/中国石油青年/
+/workspace/
+/research/
+/skills/
+/shared_memory/
+/memory_core/
+/对话录/
+/知识库/
+/defense_system/
+/learnings/
+
+# 单文件私有
+/active_context.py
+/knowledge_graph.py
+/learner.py
+/vector_memory.py
+/memory_bridge.py
+/memory_watch.py
+/memory_incubator.py
+/perceptor.py
+/digest.py
+/daily_reflection.py
+/evolution_report.py
+/sync_to_backup.sh
+/mobai_framework.md
+/digest_reminder.json
+
+# 工具包内部数据（用户自己的数据）
+moyu_toolkit/memory_data/
+moyu_toolkit/__pycache__/

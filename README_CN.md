@@ -1,6 +1,6 @@
 # MOYU — AI Agent 记忆工具包
 
-**10 大记忆能力，让 AI Agent 跨会话真正记得你是谁。**
+**11 大记忆能力，让 AI Agent 跨会话真正记得你是谁。**
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -26,7 +26,15 @@ python3 agent_memory.py search "我们聊过什么"
 
 ---
 
-## 10 大能力
+**（可选）记忆自我保护 — 在误删之前阻止它：**
+
+```bash
+cd moyu_toolkit && python3 security.py setup
+```
+
+这是你记忆的第一道防火墙。跟完整性校验（事后检测篡改）不同，记忆自我保护在操作**到达记忆文件之前**就阻止它。设好密码后，删除文件、修改配置、运行外部脚本等危险操作都需验证。用户手滑 rm？其他 AI Agent 误操作？全部拦下。[查看源码 →](moyu_toolkit/security.py)
+
+---
 
 | # | 能力 | 说明 |
 |---|------|------|
@@ -40,6 +48,7 @@ python3 agent_memory.py search "我们聊过什么"
 | 8️⃣ | **完整性校验** | 检测记忆文件篡改 |
 | 9️⃣ | **自动恢复** | 检测到篡改后自动从备份恢复 |
 | 🔟 | **法医分析** | 分析篡改来源——指令覆盖、提示词注入等 |
+| 1️⃣1️⃣ | **记忆自我保护** | 第一道防火墙 — 在操作到达记忆文件之前阻止误删和篡改。密码验证、自动锁定、审计留痕。 |
 
 ---
 
@@ -57,6 +66,7 @@ python3 agent_memory.py search "我们聊过什么"
 | 完整性校验 | ❌ 无 | **✅ manifest + SHA256** |
 | 自动恢复 | ❌ 无 | **✅ 从备份恢复** |
 | 法医分析 | ❌ 无 | **✅ 攻击来源分析** |
+| 记忆自我保护 | ❌ 无 | **✅ 事前验证，操作前拦截** |
 | API 切换 | 固定 | **✅ 随意切换** |
 | 平台绑定 | 绑定平台 | **✅ 零绑定** |
 
@@ -70,6 +80,7 @@ moyu_toolkit/
 ├── active_context.py         # 工作记忆（抗压缩）
 ├── knowledge_graph.py        # 实体关系图谱
 ├── learner.py                # 从用户纠正中学习
+├── security.py               # 记忆自我保护 — 第一道防火墙
 ├── defense_toolkit/
 │   └── integrity_checker.py  # 文件完整性校验 + 自动恢复
 ├── config.yaml               # API 配置

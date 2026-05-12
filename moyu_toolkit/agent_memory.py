@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-agent_memory.py — MOYU 向量记忆引擎
+agent_memory.py — MOYU Vector Memory Engine
 
-核心功能：
-- TEMPR 多策略检索（语义 + BM25关键词 + 时间衰减）
-- 自动记忆索引
-- 防重复机制
+Core Features:
+- TEMPR multi-strategy retrieval (semantic + BM25 keyword + time decay)
+- Automatic memory indexing
+- Duplicate prevention mechanism
 
-用法：
-    python3 agent_memory.py index      # 批量索引所有记忆
-    python3 agent_memory.py search q   # 搜索相关记忆
-    python3 agent_memory.py stats      # 显示索引状态
+Usage:
+    python3 agent_memory.py index      # Batch index all memories
+    python3 agent_memory.py search q   # Search relevant memories
+    python3 agent_memory.py stats      # Show index status
 """
 
 import json
@@ -23,30 +23,30 @@ import numpy as np
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
-# ==================== 配置 ====================
+# ==================== Configuration ====================
 
-# 默认路径，可通过环境变量 MOYU_STORAGE 覆盖
+# Default path, can be overridden via MOYU_STORAGE environment variable
 STORAGE_PATH = os.environ.get("MOYU_STORAGE", os.path.join(os.path.dirname(__file__), "memory_data"))
 
-# TEMPR 检索权重
+# TEMPR retrieval weights
 TEMPR_WEIGHTS = {"semantic": 0.5, "keyword": 0.3, "recency": 0.2}
 SEMANTIC_FALLBACK_THRESHOLD = 0.1
 
-# n-gram 兜底配置
+# n-gram fallback configuration
 NGRAM_N = 3
 NGRAM_DIM = 256
 MAX_TEXT_LENGTH = 512
 
 
 def _storage_path(*parts: str) -> str:
-    """获取存储路径"""
+    """Get storage path"""
     path = os.path.join(STORAGE_PATH, *parts)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     return path
 
 
 def _load_config() -> dict:
-    """加载 config.yaml（如果存在）"""
+    """Load config.yaml (if exists)"""
     config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
     if os.path.exists(config_path):
         try:
@@ -59,7 +59,7 @@ def _load_config() -> dict:
 
 
 def _get_embedding_api() -> Tuple[str, str, str]:
-    """获取 embedding API 配置"""
+    """Get embedding API configuration"""
     config = _load_config()
     api_cfg = config.get("api", {})
     base_url = api_cfg.get("base_url", "https://api.openai.com/v1").rstrip("/")
@@ -70,7 +70,7 @@ def _get_embedding_api() -> Tuple[str, str, str]:
 
 
 def _get_chat_api() -> Tuple[str, str, str]:
-    """获取 chat API 配置"""
+    """Get chat API configuration"""
     config = _load_config()
     api_cfg = config.get("api", {})
     base_url = api_cfg.get("base_url", "https://api.openai.com/v1").rstrip("/")
@@ -80,14 +80,14 @@ def _get_chat_api() -> Tuple[str, str, str]:
     return api_key, chat_url, model
 
 
-# ==================== 向量操作 ====================
+# ==================== Vector Operations ====================
 
 def cosine_similarity(vec1: list, vec2: list) -> float:
     a, b = np.array(vec1), np.array(vec2)
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-10))
 
 
-# ==================== TEMPR 多策略检索 ====================
+# ==================== TEMPR Multi-Strategy Retrieval ====================
 
 def _bm25_score(query_words: list, doc_words: list,
                 avg_len: float, doc_len: float,
@@ -147,7 +147,7 @@ def _get_ngram_embedding(text: str) -> list:
 
 
 def get_embedding(text: str, is_query: bool = False) -> Optional[list]:
-    """获取文本 embedding，API 不可用时自动降级到 n-gram"""
+    """Get text embedding, auto-fallback to n-gram when API unavailable"""
     text = text[:MAX_TEXT_LENGTH]
     api_key, url, model = _get_embedding_api()
     if api_key:
@@ -169,7 +169,7 @@ def get_embedding(text: str, is_query: bool = False) -> Optional[list]:
     return _get_ngram_embedding(text)
 
 
-# ==================== 记忆索引管理 ====================
+# ==================== Memory Index Management ====================
 
 def _load_index() -> dict:
     path = _storage_path("vector_index.json")
@@ -201,12 +201,12 @@ def _save_memories(memories: list):
 
 def add_memory(summary: str, source: str = "user",
                metadata: dict = None) -> Optional[dict]:
-    """添加一条记忆（自动去重 + 索引）"""
+    """Add a memory entry (auto-dedup + index)"""
     content_hash = hashlib.sha256(summary.encode()).hexdigest()[:16]
     memories = _load_memories()
     for m in memories:
         if m.get("content_hash") == content_hash:
-            return None  # 重复，跳过
+            return None  # Duplicate, skip
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     entry = {
         "id": f"mem_{ts}",
@@ -238,18 +238,18 @@ def _add_to_index(mid: str, summary: str, ts: str, source: str):
 
 
 def batch_index():
-    """批量索引所有未索引的记忆"""
+    """Batch index all unindexed memories"""
     memories = _load_memories()
     idx = _load_index()
     indexed = {v["memory_id"] for v in idx["vectors"]}
     to_idx = [m for m in memories if m["id"] not in indexed]
     for m in to_idx:
         _add_to_index(m["id"], m.get("summary", ""), m.get("timestamp", ""), m.get("source", ""))
-    print(f"✅ 已索引 {len(to_idx)}/{len(memories)} 条记忆")
+    print(f"✅ Indexed {len(to_idx)}/{len(memories)} memories")
 
 
 def search(query: str, top_k: int = 5) -> list:
-    """TEMPR 多策略检索"""
+    """TEMPR multi-strategy retrieval"""
     idx = _load_index()
     if not idx["vectors"]:
         return []
@@ -282,20 +282,20 @@ def search(query: str, top_k: int = 5) -> list:
 def stats():
     idx = _load_index()
     vecs = idx["vectors"]
-    print(f"\n📊 MOYU 向量记忆")
+    print(f"\n📊 MOYU Vector Memory")
     print("=" * 50)
-    print(f"已索引: {len(vecs)} 条")
+    print(f"Indexed: {len(vecs)} entries")
     if vecs:
         srcs = collections.Counter(v.get("source", "unknown") for v in vecs)
-        print(f"\n来源分布:")
+        print(f"\nSource distribution:")
         for s, c in srcs.most_common():
-            print(f"  {s}: {c} 条")
+            print(f"  {s}: {c} entries")
 
 
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:
-        print("用法: index | search <query> | stats")
+        print("Usage: index | search <query> | stats")
         sys.exit(0)
     cmd = sys.argv[1]
     if cmd == "index":

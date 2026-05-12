@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-integrity_checker.py — MOYU 文件完整性校验
+integrity_checker.py — MOYU File Integrity Checker
 
-检测记忆文件被篡改，自动从备份恢复。
+Detects memory file tampering and auto-recovers from backups.
 
-用法：
-    python3 integrity_checker.py              # 运行校验
-    python3 integrity_checker.py init         # 初始化 manifest
+Usage:
+    python3 integrity_checker.py              # Run verification
+    python3 integrity_checker.py init         # Initialize manifest
 """
 
 import json, os, hashlib, sys, shutil
@@ -32,7 +32,7 @@ def log(msg, level="INFO"):
 
 
 def init_manifest():
-    """扫描 memory_data 下的文件，生成 manifest"""
+    """Scan memory_data files and generate manifest"""
     manifest = {"version": "1.0", "created": datetime.now().isoformat(), "files": []}
     for fname in os.listdir(BASE):
         fpath = os.path.join(BASE, fname)
@@ -44,12 +44,12 @@ def init_manifest():
             })
     with open(MANIFEST_PATH, 'w') as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
-    log(f"manifest 已初始化 ({len(manifest['files'])} 个文件)", "PASS")
+    log(f"Manifest initialized ({len(manifest['files'])} files)", "PASS")
 
 
 def verify():
     if not os.path.exists(MANIFEST_PATH):
-        log("manifest.json 不存在，请先运行 init", "CRITICAL")
+        log("manifest.json not found. Run 'init' first.", "CRITICAL")
         return False
     with open(MANIFEST_PATH) as f:
         manifest = json.load(f)
@@ -60,11 +60,11 @@ def verify():
         actual = sha256_file(fpath)
         expected = entry["sha256"]
         if actual == "FILE_NOT_FOUND":
-            log(f"文件丢失: {entry['path']}", "CRITICAL")
+            log(f"File missing: {entry['path']}", "CRITICAL")
             results.append({"file": entry["path"], "status": "MISSING"})
             all_ok = False
         elif actual != expected:
-            log(f"文件被篡改: {entry['path']}", "CRITICAL")
+            log(f"File tampered: {entry['path']}", "CRITICAL")
             results.append({"file": entry["path"], "status": "TAMPERED"})
             all_ok = False
             _auto_recover(entry["path"], manifest)
@@ -72,14 +72,14 @@ def verify():
             log(f"✓ {entry['path']}", "PASS")
             results.append({"file": entry["path"], "status": "OK"})
     if all_ok:
-        log("全部通过 ✓", "PASS")
+        log("All checks passed \u2713", "PASS")
     return all_ok
 
 
 def _auto_recover(fpath, manifest):
-    """从备份恢复"""
+    """Restore from backup"""
     if not os.path.isdir(BACKUP_DIR):
-        log(f"  无备份目录，无法恢复 {fpath}", "WARN")
+        log(f"  No backup directory, cannot restore {fpath}", "WARN")
         return
     backups = sorted([f for f in os.listdir(BACKUP_DIR) if f.endswith(".json")], reverse=True)
     for bf in backups:
@@ -93,39 +93,39 @@ def _auto_recover(fpath, manifest):
                     e["sha256"] = new_hash
             with open(MANIFEST_PATH, 'w') as f:
                 json.dump(manifest, f, ensure_ascii=False, indent=2)
-            log(f"  ✅ 已从 {bf} 恢复", "PASS")
+            log(f"  \u2705 Restored from {bf}", "PASS")
             return
         except Exception as e:
-            log(f"  ⚠️ 恢复失败: {e}", "WARN")
-    log(f"  ❌ 所有备份均失败", "CRITICAL")
+            log(f"  \u26a0\ufe0f Restore failed: {e}", "WARN")
+    log(f"  \u274c All backups failed", "CRITICAL")
 
 
 def forensic_analysis(tampered_file: str):
-    """法医分析：对比当前文件与最近备份"""
+    """Forensic analysis: compare current file with latest backup"""
     if not os.path.isdir(BACKUP_DIR):
-        return "无备份目录"
+        return "No backup directory"
     backups = sorted([f for f in os.listdir(BACKUP_DIR) if f.endswith(".json")], reverse=True)
     if not backups:
-        return "无可用备份"
+        return "No backup available"
     current = os.path.join(BASE, tampered_file)
     latest = os.path.join(BACKUP_DIR, backups[0])
     if not os.path.exists(current) or not os.path.exists(latest):
-        return "文件不存在"
+        return "File not found"
     cur_size = os.path.getsize(current)
     bak_size = os.path.getsize(latest)
     diff = cur_size - bak_size
-    report = f"文件大小变化 {diff:+d} 字节"
+    report = f"File size changed by {diff:+d} bytes"
     if diff > 500:
-        report += " —— 可能被注入了新内容"
+        report += " — possible injection of new content"
     elif diff < -500:
-        report += " —— 可能被删除了内容"
-    # 检测可疑模式
+        report += " — possible deletion of content"
+    # Detect suspicious patterns
     with open(current, errors='replace') as f:
         content = f.read()
-    for pattern, label in [("忽略你之前的指令", "指令覆盖"), ("忽略之前的设定", "设定覆盖"),
-                            ("--end--", "注入标记")]:
+    for pattern, label in [("忽略你之前的指令", "Instruction override"), ("忽略之前的设定", "Context override"),
+                            ("--end--", "Injection marker")]:
         if pattern in content:
-            report += f"\n  🔴 检测到 {label}: \"{pattern}\""
+            report += f"\n  \U0001f534 Detected {label}: \"{pattern}\""
     return report
 
 

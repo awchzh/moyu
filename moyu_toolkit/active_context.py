@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-active_context.py — MOYU 工作记忆
+active_context.py — MOYU Working Memory
 
-解决上下文压缩后丢失"当前在做什么"的问题。
-独立文件存储，不被任何压缩机制触碰。
+Solves the problem of losing \"what is currently being done\" after context compression.
+Stored as a standalone file, untouched by any compression mechanism.
 
-用法：
-    python3 active_context.py status        # 查看当前工作记忆
-    python3 active_context.py start         # 新会话
-    python3 active_context.py set task ...  # 设置任务
-    python3 active_context.py add ...       # 记录关键上下文
-    python3 active_context.py todo add ...  # 添加待办
-    python3 active_context.py todo done ..  # 完成待办
-    python3 active_context.py inject        # 获取注入格式
+Usage:
+    python3 active_context.py status        # View current working memory
+    python3 active_context.py start         # Start a new session
+    python3 active_context.py set task ...  # Set the current task
+    python3 active_context.py add ...       # Record key context
+    python3 active_context.py todo add ...  # Add a todo item
+    python3 active_context.py todo done ..  # Mark a todo as done
+    python3 active_context.py inject        # Get injection format
 """
 
 import json
@@ -55,7 +55,7 @@ def _default() -> dict:
 
 def start_session():
     _save(_default())
-    print("✅ 新会话已启动")
+    print("✅ New session started")
 
 
 def set_task(task: str):
@@ -63,7 +63,7 @@ def set_task(task: str):
     ctx["task"] = task
     ctx["last_updated"] = datetime.now().isoformat()
     _save(ctx)
-    print(f"✅ 任务: {task}")
+    print(f"✅ Task: {task}")
 
 
 def add_context(text: str):
@@ -73,7 +73,7 @@ def add_context(text: str):
         ctx["contexts"] = ctx["contexts"][-5:]
     ctx["last_updated"] = datetime.now().isoformat()
     _save(ctx)
-    print(f"✅ 上下文已记录")
+    print(f"✅ Context recorded")
 
 
 class Todo:
@@ -84,7 +84,7 @@ class Todo:
                              "created": datetime.now().isoformat()})
         ctx["last_updated"] = datetime.now().isoformat()
         _save(ctx)
-        print(f"✅ 待办: {text[:60]}")
+        print(f"✅ Todo: {text[:60]}")
 
     @staticmethod
     def done(tid: str):
@@ -95,38 +95,38 @@ class Todo:
                 t["completed_at"] = datetime.now().isoformat()
         ctx["last_updated"] = datetime.now().isoformat()
         _save(ctx)
-        print(f"✅ 已完成: {tid}")
+        print(f"✅ Completed: {tid}")
 
 
 def format_for_injection() -> str:
     ctx = _load()
-    lines = ["## [工作记忆 — 当前会话上下文]\n"]
+    lines = ["## [Working Memory — Current Session Context]\n"]
     if ctx["task"]:
-        lines.append(f"**当前任务：** {ctx['task']}\n")
+        lines.append(f"**Current Task:** {ctx['task']}\n")
     if ctx["contexts"]:
-        lines.append("**关键信息：**")
+        lines.append("**Key Context:**")
         for c in ctx["contexts"]:
             ts = c.get("timestamp", "")[:16]
             lines.append(f"- [{ts}] {c['text']}")
         lines.append("")
     pending = [t for t in ctx["todos"] if not t["done"]]
     if pending:
-        lines.append("**待办：**")
+        lines.append("**Todos:**")
         for t in pending:
             lines.append(f"- [ ] {t['text']}")
         lines.append("")
-    lines.append(f"*开始于 {ctx['session_start'][:19]}，最近更新 {ctx['last_updated'][:19]}*")
+    lines.append(f"*Started {ctx['session_start'][:19]}, last updated {ctx['last_updated'][:19]}*")
     return "\n".join(lines)
 
 
 def status():
     ctx = _load()
-    print(f"\n📋 工作记忆")
+    print(f"\n📋 Working Memory")
     print("=" * 50)
-    print(f"会话: {ctx['session_start'][:19]}")
-    print(f"任务: {ctx['task'] or '无'}")
-    print(f"上下文: {len(ctx['contexts'])} 条")
-    print(f"待办: {len(ctx['todos'])} 项")
+    print(f"Session: {ctx['session_start'][:19]}")
+    print(f"Task: {ctx['task'] or 'none'}")
+    print(f"Contexts: {len(ctx['contexts'])}")
+    print(f"Todos: {len(ctx['todos'])} items")
     for t in ctx['todos']:
         m = "✅" if t["done"] else "⬜"
         print(f"  {m} {t['text'][:80]}")
@@ -135,7 +135,7 @@ def status():
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:
-        print("用法: status | start | set task | add | todo")
+        print("Usage: status | start | set task | add | todo")
         sys.exit(0)
     cmd = sys.argv[1]
     if cmd == "status": status()

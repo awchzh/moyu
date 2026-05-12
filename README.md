@@ -1,6 +1,6 @@
 # MOYU — AI Agent Memory Toolkit
 
-**10 memory capabilities for your AI Agent. Remember who you are across conversations. No code rewrite required.**
+**11 memory capabilities for your AI Agent. Remember who you are across conversations. No code rewrite required.**
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -25,9 +25,17 @@ python3 agent_memory.py search "what did we talk about"
 
 > **Zero-config mode:** Works immediately with local fallback. Add your API key in `config.yaml` when you want semantic search.
 
+**(Optional) Memory Self-Defense — prevent accidental deletion & tampering before they happen:**
+
+```bash
+cd moyu_toolkit && python3 security.py setup
+```
+
+This is your memory's first line of defense. Unlike Integrity Check + Auto Recovery (which detect tampering after the fact), Memory Self-Defense stops dangerous operations **before** they reach your memory files. Set a password — operations that could delete or corrupt your memory (file deletion, config changes, external scripts) will require verification. Accidental `rm` by users or misbehaving agents? Blocked. [Learn more →](moyu_toolkit/security.py)
+
 ---
 
-## 10 Capabilities
+## 11 Capabilities
 
 | # | Capability | What it does |
 |---|-----------|-------------|
@@ -41,6 +49,7 @@ python3 agent_memory.py search "what did we talk about"
 | 8️⃣ | **Integrity Verification** | Detects memory file tampering on wake |
 | 9️⃣ | **Auto Recovery** | Automatically restores from backup when tampering detected |
 | 🔟 | **Forensic Analysis** | Analyzes what changed and how — instruction override, prompt injection detection |
+| 1️⃣1️⃣ | **Memory Self-Defense** | First line of defense — prevents accidental deletion and tampering before they happen. Password verification, auto-lockout, and audit trail. |
 
 ---
 
@@ -58,6 +67,7 @@ python3 agent_memory.py search "what did we talk about"
 | Integrity check | ❌ None | **✅ manifest + SHA256** |
 | Auto recovery | ❌ None | **✅ From backup** |
 | Forensic analysis | ❌ None | **✅ Tamper source analysis** |
+| Memory self-defense | ❌ None | **✅ Pre-verification, blocks before damage** |
 | API switching | Fixed | **✅ Hot-swappable** |
 | Platform dependency | Tied to platform | **✅ Zero binding** |
 | Setup time | Out of box | **pip install, 5min** |
@@ -82,6 +92,7 @@ moyu_toolkit/
 ├── active_context.py         # Working memory (survives compression)
 ├── knowledge_graph.py        # Entity-relation graph
 ├── learner.py                # Learn from user corrections
+├── security.py               # Memory self-defense — first line of defense
 ├── defense_toolkit/
 │   └── integrity_checker.py  # File integrity + auto recovery
 ├── config.yaml               # API keys & settings (fill in yours)
