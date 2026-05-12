@@ -26,6 +26,14 @@ python3 agent_memory.py search "我们聊过什么"
 
 ---
 
+**一条命令统领全局：**
+
+```bash
+python3 moyu_toolkit/moyu.py --help
+```
+
+所有 MOYU 功能统一入口——检索、统计、设置、演示，一个命令搞定。
+
 **（可选）记忆自我保护 — 在误删之前阻止它：**
 
 ```bash
@@ -81,6 +89,7 @@ moyu_toolkit/
 ├── knowledge_graph.py        # 实体关系图谱
 ├── learner.py                # 从用户纠正中学习
 ├── security.py               # 记忆自我保护 — 第一道防火墙
+├── moyu.py                    # 统一 CLI 入口
 ├── defense_toolkit/
 │   └── integrity_checker.py  # 文件完整性校验 + 自动恢复
 ├── config.yaml               # API 配置

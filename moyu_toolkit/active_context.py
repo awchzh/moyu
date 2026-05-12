@@ -132,6 +132,30 @@ def status():
         print(f"  {m} {t['text'][:80]}")
 
 
+def demo() -> dict:
+    """Return demo content for moyu_demo.py discovery engine."""
+    return {
+        "capability": 2,
+        "title": "Working Memory",
+        "output": """🧠 2/6  DEMO
+────────────────────────────────────
+  [Recovered Working Memory]
+  Current task: Track smart photo frame MVP progress
+  Todos:
+    ✅ Confirm A/B roadmap decision
+    ✅ Schedule first review meeting
+    ⬜ Push weather plugin development
+    ⬜ Prepare prototype demo by end of month
+
+  Key context:
+    • Zhang Yi is backend dev, building Flask API
+    • Boss Li wants prototype by end of month
+
+  Survives context compression. 100 rounds in, open working
+  memory and you still know what you're doing.""",
+    }
+
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:

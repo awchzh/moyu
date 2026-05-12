@@ -129,6 +129,27 @@ def forensic_analysis(tampered_file: str):
     return report
 
 
+def demo() -> dict:
+    """Return demo content for moyu_demo.py discovery engine."""
+    return {
+        "capability": 6,
+        "title": "Integrity Check + Auto Recovery + Forensic Analysis",
+        "output": """💡 6/7  DEMO
+────────────────────────────────────
+  [Wake Check]
+  ✅ conversation_memory.json — OK
+  ❌ active_context.json — TAMPERED!
+     → Auto-recovered from backup
+     → Forensic analysis: file size +2048 bytes
+     → Detected: \"ignore previous instructions\" (injection)
+
+  Triple-layer defense:
+  • Before operation 🔒 Memory Self-Defense (security.py)
+  • On wake      ✅ Integrity Check + Auto Recovery
+  • Post-fact    🔍 Forensic Analysis""",
+    }
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "init":
         init_manifest()

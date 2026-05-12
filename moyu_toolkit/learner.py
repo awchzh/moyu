@@ -319,9 +319,24 @@ def stats():
         if not l.get("promoted"):
             print(f"  ⏳ [{l['count']} times] {l['lesson'][:60]}")
 
+def demo() -> dict:
+    """Return demo content for moyu_demo.py discovery engine."""
+    return {
+        "capability": 5,
+        "title": "Learn from Corrections",
+        "output": """🎯 5/6  DEMO
+────────────────────────────────────
+  You said: \"别再用A方案了，我们选了B\"
+  → Agent learns: \"User wants no more mention of Plan A\"
 
-# ==================== Command Line ====================
+  Second time: \"又提A方案，不是说了选B吗\"
+  → count +1 → promotion check
 
+  Third time same mistake: promoted to permanent rule
+  → Auto-loaded on every wake → same mistake never repeated""",
+    }
+
+# ==================== Command Line ====================\n
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:

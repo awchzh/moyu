@@ -149,6 +149,27 @@ def stats():
         print(f"  {data['name']} ({data.get('mention_count', 0)} appearances)")
 
 
+def demo() -> dict:
+    """Return demo content for moyu_demo.py discovery engine."""
+    return {
+        "capability": 3,
+        "title": "Knowledge Graph",
+        "output": """📊 3/6  DEMO
+────────────────────────────────────
+  Entities & relations extracted from conversation:
+
+  Zhang Yi ──→ works at ──→ Smart Photo Frame
+  Zhang Yi ──→ uses ──→ Flask
+  Zhang Yi ──→ prefers ──→ Feishu Docs
+  Xiao Li ──→ works at ──→ Smart Photo Frame
+  Xiao Li ──→ uses ──→ Vue3
+  Boss Li ──→ manages ──→ Smart Photo Frame
+
+  Search \"Zhang Yi\" → see all his roles and preferences.
+  Pure JSON file, zero database ops.""",
+    }
+
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:

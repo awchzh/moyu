@@ -292,6 +292,24 @@ def stats():
             print(f"  {s}: {c} entries")
 
 
+def demo() -> dict:
+    """Return demo content for moyu_demo.py discovery engine."""
+    return {
+        "capability": 1,
+        "title": "TEMPR Multi-Strategy Retrieval",
+        "output": """🔍 1/6  DEMO
+────────────────────────────────────
+  You said: \"上次开会说了什么方案\"
+
+  ⭐ Hit [Discussion] Confirmed A/B roadmap for smart photo frame
+  ⭐ Hit [Meeting] Discussed pricing and feature priorities
+  ⭐ Hit [Decision] Team decided to go with MVP first
+
+  Even if your search words don't match the original text exactly,
+  TEMPR (semantic + BM25 keyword + time-weighted) still finds it.""",
+    }
+
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:

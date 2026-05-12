@@ -25,7 +25,15 @@ python3 agent_memory.py search "what did we talk about"
 
 > **Zero-config mode:** Works immediately with local fallback. Add your API key in `config.yaml` when you want semantic search.
 
-**(Optional) Memory Self-Defense — prevent accidental deletion & tampering before they happen:**
+**One command to rule them all:**
+
+```bash
+python3 moyu_toolkit/moyu.py --help
+```
+
+All MOYU capabilities available from a single entry point — search, stats, setup, demo, and more.
+
+**(Optional) Memory Self-Defense — prevent accidental deletion & tampering before they happen:
 
 ```bash
 cd moyu_toolkit && python3 security.py setup
@@ -93,6 +101,7 @@ moyu_toolkit/
 ├── knowledge_graph.py        # Entity-relation graph
 ├── learner.py                # Learn from user corrections
 ├── security.py               # Memory self-defense — first line of defense
+├── moyu.py                    # Unified CLI entry point
 ├── defense_toolkit/
 │   └── integrity_checker.py  # File integrity + auto recovery
 ├── config.yaml               # API keys & settings (fill in yours)

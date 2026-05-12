@@ -396,6 +396,28 @@ def status() -> dict:
     return info
 
 
+def demo() -> dict:
+    """Return demo content for moyu_demo.py discovery engine."""
+    return {
+        "capability": 7,
+        "title": "Memory Self-Defense",
+        "output": """🛡️ 7/7  DEMO
+────────────────────────────────────
+  [Before: Direct file access]  [After: Protected]
+
+  Agent: \"delete config.yaml\"   Agent: \"delete config.yaml\"
+  → Done. 🗑️                   → 🔐 Password required!
+                                  User: ***
+                                  ✅ Identity verified
+                                  ⏹ Operation logged
+
+  First line of defense — stops dangerous operations
+  BEFORE they reach your memory files.
+  • 3 failed attempts → 30min auto-lockout
+  • Every attempt logged for forensic audit""",
+    }
+
+
 # ── CLI ────────────────────────────────────────────────────
 
 
