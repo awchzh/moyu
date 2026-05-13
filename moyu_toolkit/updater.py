@@ -26,7 +26,7 @@ VERSION = "2.0.3"
 # Known SHA256 checksums for release zips, keyed by version tag.
 # Verified before extracting updates.
 _CHECKSUMS = {
-    "2.0.3": "ac687115721434dbc2ecbea3c2ee6480a483e95d81135a8338049dca8a7680bf",
+    "2.0.3": "6ab6f5aaa08dcde827a2c972eb9d2f3b0cbae76d032261bbd8f069c4d84e573a",
 }
 
 TOOLKIT_DIR = Path(__file__).parent.resolve()
