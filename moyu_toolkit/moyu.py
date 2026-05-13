@@ -80,8 +80,15 @@ def cmd_status():
 
 
 def cmd_demo():
+    """Safely import and run moyu_demo."""
+    import importlib.util
     demo_path = os.path.join(TOOLKIT_DIR, "moyu_demo.py")
-    exec(open(demo_path).read(), {"__name__": "__main__", "__file__": demo_path})
+    spec = importlib.util.spec_from_file_location("moyu_demo", demo_path)
+    if spec and spec.loader:
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        if hasattr(mod, "run"):
+            mod.run()
 
 
 CMD_TABLE = {

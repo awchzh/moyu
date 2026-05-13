@@ -21,7 +21,13 @@ import zipfile
 from pathlib import Path
 
 # ── Version (also importable) ──
-VERSION = "2.0.0"
+VERSION = "2.0.1"
+
+# Known SHA256 checksums for release zips, keyed by version tag.
+# Verified before extracting updates.
+_CHECKSUMS = {
+    "2.0.1": "287e4b59097700f31569f438e289d2dd0f3db653c73fc37042297b37fa47e31e",
+}
 
 TOOLKIT_DIR = Path(__file__).parent.resolve()
 REPO = "awchzh/moyu-memory"
@@ -95,6 +101,18 @@ def update(dry_run: bool = False) -> dict:
     except Exception as e:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         return {"status": "error", "message": f"Download failed: {e}"}
+
+    # ── SHA256 checksum verification ──
+    import hashlib
+    expected = _CHECKSUMS.get(info["latest"])
+    if expected:
+        sha = hashlib.sha256()
+        with open(zip_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(65536), b''):
+                sha.update(chunk)
+        if sha.hexdigest() != expected:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            return {"status": "error", "message": f"Checksum mismatch for v{info['latest']}. Update aborted."}
 
     # Extract
     extract_dir = tmp_dir / "extracted"
