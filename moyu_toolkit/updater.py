@@ -21,12 +21,12 @@ import zipfile
 from pathlib import Path
 
 # ── Version (also importable) ──
-VERSION = "2.0.2"
+VERSION = "2.0.3"
 
 # Known SHA256 checksums for release zips, keyed by version tag.
 # Verified before extracting updates.
 _CHECKSUMS = {
-    # Leave empty for v2.0.2 — will be added after GitHub creates the release
+    "2.0.3": "ac687115721434dbc2ecbea3c2ee6480a483e95d81135a8338049dca8a7680bf",
 }
 
 TOOLKIT_DIR = Path(__file__).parent.resolve()

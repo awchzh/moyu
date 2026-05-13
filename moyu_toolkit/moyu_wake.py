@@ -45,6 +45,7 @@ def wake(dry_run: bool = False) -> str:
     mm = _import("memory_merge")
     sb = _import("session_bridge")
     up = _import("updater")
+    sr = _import("self_reflection")
 
     # ── Step 0: Check context pressure level ──
     status = cm.check_status()
@@ -59,6 +60,14 @@ def wake(dry_run: bool = False) -> str:
 
     # ── Step 0d: Load session bridge ──
     bridge_info = sb.load()
+
+    # ── Step 0e: Self-reflection (only under pressure, compact mode) ──
+    reflection_msg = ""
+    try:
+        if context_pressure:
+            reflection_msg = sr.run_compact()
+    except Exception:
+        pass
 
     # ── Step 1: Collect context ──
     working_memory = ac.format_for_injection()
