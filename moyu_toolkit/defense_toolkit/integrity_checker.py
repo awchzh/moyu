@@ -101,7 +101,8 @@ def _auto_recover(fpath, manifest):
 
 
 def forensic_analysis(tampered_file: str):
-    """Forensic analysis: compare current file with latest backup"""
+    """Forensic analysis: compare current file with latest backup,
+    detect attack patterns and format anomalies."""
     if not os.path.isdir(BACKUP_DIR):
         return "No backup directory"
     backups = sorted([f for f in os.listdir(BACKUP_DIR) if f.endswith(".json")], reverse=True)
@@ -119,13 +120,121 @@ def forensic_analysis(tampered_file: str):
         report += " — possible injection of new content"
     elif diff < -500:
         report += " — possible deletion of content"
-    # Detect suspicious patterns
+
+    # Read content
     with open(current, errors='replace') as f:
         content = f.read()
-    for pattern, label in [("忽略你之前的指令", "Instruction override"), ("忽略之前的设定", "Context override"),
-                            ("--end--", "Injection marker")]:
-        if pattern in content:
-            report += f"\n  \U0001f534 Detected {label}: \"{pattern}\""
+
+    # ── Detect suspicious patterns (instruction override / role rewrite / rule inject / memory tamper) ──
+    FORENSIC_PATTERNS = [
+        # Chinese — Instruction override
+        ("忽略你之前的指令", "Instruction override"),
+        ("忽略之前的设定", "Instruction override"),
+        ("忘记之前的指令", "Instruction override"),
+        ("忘记之前所有的", "Instruction override"),
+        ("无视之前的规则", "Instruction override"),
+        ("抛弃之前的设定", "Instruction override"),
+        ("以上全部作废", "Instruction override"),
+        ("忽略以上所有", "Instruction override"),
+        # Chinese — Role rewrite
+        ("从现在开始你是", "Role rewrite"),
+        ("从现在起你扮演", "Role rewrite"),
+        ("你的新身份是", "Role rewrite"),
+        ("假装你是", "Role rewrite"),
+        ("想象你是", "Role rewrite"),
+        # Chinese — Rule injection
+        ("这是最高指令", "Rule injection"),
+        ("你必须遵守", "Rule injection"),
+        ("无论如何都要", "Rule injection"),
+        ("新的规则是", "Rule injection"),
+        ("最重要的规则", "Rule injection"),
+        ("强行覆写", "Rule injection"),
+        ("无视你之前的所有安全规则", "Rule injection"),
+        # Chinese — Memory manipulation
+        ("删除你的记忆", "Memory manipulation"),
+        ("清空你的记忆", "Memory manipulation"),
+        ("修改你的记忆", "Memory manipulation"),
+        ("覆写记忆", "Memory manipulation"),
+        ("重置你的设定", "Memory manipulation"),
+        # English — Instruction override
+        ("ignore all previous instructions", "Instruction override"),
+        ("ignore previous", "Instruction override"),
+        ("forget everything", "Instruction override"),
+        ("forget all previous", "Instruction override"),
+        ("override all instructions", "Instruction override"),
+        ("override previous", "Instruction override"),
+        ("disregard previous", "Instruction override"),
+        ("disregard all instructions", "Instruction override"),
+        ("discard previous", "Instruction override"),
+        # English — Role rewrite
+        ("from now on you are", "Role rewrite"),
+        ("you are now", "Role rewrite"),
+        ("your new role is", "Role rewrite"),
+        ("your new identity is", "Role rewrite"),
+        ("pretend you are", "Role rewrite"),
+        ("act as if", "Role rewrite"),
+        ("you will now act as", "Role rewrite"),
+        # English — Rule injection
+        ("this is your top priority", "Rule injection"),
+        ("most important instruction", "Rule injection"),
+        ("new rule", "Rule injection"),
+        ("this overrides everything", "Rule injection"),
+        ("you must obey", "Rule injection"),
+        ("under no circumstances", "Rule injection"),
+        ("ignore all safety rules", "Rule injection"),
+        ("override safety", "Rule injection"),
+        # English — Memory manipulation
+        ("delete your memory", "Memory manipulation"),
+        ("erase your memory", "Memory manipulation"),
+        ("clear your memory", "Memory manipulation"),
+        ("modify your memory", "Memory manipulation"),
+        ("override memory", "Memory manipulation"),
+        ("forget what you know", "Memory manipulation"),
+        ("reset your settings", "Memory manipulation"),
+        # Injection markers
+        ("--end--", "Injection marker"),
+        ("===END===", "Injection marker"),
+        ("[END]", "Injection marker"),
+    ]
+
+    detected_labels = set()
+    for pattern, label in FORENSIC_PATTERNS:
+        if pattern in content.lower():
+            if label not in detected_labels:
+                report += f"\n  🔴 Detected {label}"
+                detected_labels.add(label)
+
+    # ── Format anomaly detection ──
+    # Check for truncation (JSON file cut off mid-structure)
+    if content.rstrip().endswith(",") or (content.rstrip().endswith("}") and "}" not in content[:-1]):
+        report += "\n  ⚠️ Possible truncation: file ends unexpectedly"
+
+    # Check for JSON corruption
+    try:
+        json.loads(content)
+    except (json.JSONDecodeError, ValueError) as e:
+        report += f"\n  ⚠️ JSON structure corrupted: {str(e)[:60]}"
+
+    # Check for timestamp anomalies in known files
+    try:
+        data = json.loads(content)
+        if isinstance(data, list) and len(data) > 0:
+            ts_fields = [e.get("timestamp", "") or e.get("last_accessed", "") for e in data if isinstance(e, dict)]
+            if ts_fields:
+                ts_list = [t for t in ts_fields if t]
+                if len(ts_list) > 1:
+                    from datetime import datetime as dt
+                    parsed = []
+                    for t in ts_list:
+                        try:
+                            parsed.append(dt.fromisoformat(t))
+                        except Exception:
+                            pass
+                    if len(parsed) > 1 and parsed[-1] < parsed[0]:
+                        report += "\n  ⚠️ Timestamp anomaly: later entry has earlier timestamp"
+    except Exception:
+        pass
+
     return report
 
 

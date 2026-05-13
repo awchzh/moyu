@@ -63,3 +63,8 @@ logs/
 # 工具包内部数据（用户自己的数据）
 moyu_toolkit/memory_data/
 moyu_toolkit/__pycache__/
+
+# Temp files
+.context_bridge.pid
+context_bridge.py
+current_context.md

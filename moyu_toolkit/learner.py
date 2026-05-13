@@ -296,6 +296,100 @@ def get_rules_for_injection() -> str:
     return ""
 
 
+# ==================== User Profile Extraction ====================
+
+_PROFILE_PATTERNS = [
+    # Chinese patterns
+    (r"(?:我叫|我的名字叫|我是|叫我|你可以叫我|称呼我)\s*(.{1,8}?)(?:[，。、！？,\.!?\s]|$)", "name"),
+    (r"(?:我在|我现在在|目前工作在|就职于)\s*(.{2,20}?)(?:工作|上班|任职|担任|，|。|$)", "company"),
+    (r"(?:担任|从事|我的工作是|我的职业是|做|我是.{0,8}?的)\s*(.{2,12}?)(?:[，。、！？,\.!?\s]|$)", "job"),
+    (r"(?:我(?:很|非常|特别|最)?(?:喜欢|热爱|偏爱|爱|钟爱|中意)\s*(.{2,30}?)(?:[，。、！？,\.!?\s]|$))", "likes"),
+    (r"(?:我(?:很|非常|特别|最)?(?:讨厌|不喜欢|反感)\s*(.{2,30}?)(?:[，。、！？,\.!?\s]|$))", "dislikes"),
+    (r"(?:我[住位]?(?:在|于)\s*(.{2,15}?)(?:[，。、！？,\.!?\s]|$))", "location"),
+    (r"(?:我用|我用的是|我使用|一直以来用|常用的工具有)\s*(.{2,20}?)(?:[，。、！？,\.!?\s]|$)", "tools"),
+    # English patterns
+    (r"(?:my name is|i am|i'm|call me|you can call me)\s+(.{1,20}?)(?:[,\.!?\s]|$)", "name"),
+    (r"(?:i work at|i work for|i'm (?:a|an) (?:software|engineer|designer|writer|editor|developer|manager|researcher) at)\s+(.{2,30}?)(?:[,\.!?\s]|$)", "company"),
+    (r"(?:i'm a|i am a|my job is|i work as)\s+(.{2,20}?)(?:[,\.!?\s]|$)", "job"),
+    (r"(?:i (?:really |very |especially )?(?:like|love|enjoy|prefer)\s+(.{2,30}?)(?:[,\.!?\s]|$))", "likes"),
+    (r"(?:i (?:really |very |especially )?(?:hate|dislike|don't like)\s+(.{2,30}?)(?:[,\.!?\s]|$))", "dislikes"),
+    (r"(?:i (?:live|stay|work|am based)\s+(?:in|at)\s+(.{2,20}?)(?:[,\.!?\s]|$))", "location"),
+    (r"(?:i use|i use|my tools are|i work with)\s+(.{2,30}?)(?:[,\.!?\s]|$)", "tools"),
+]
+
+
+def _profile_path() -> str:
+    os.makedirs(STORAGE_PATH, exist_ok=True)
+    return os.path.join(STORAGE_PATH, "user_profile.json")
+
+
+def _load_profile() -> dict:
+    p = _profile_path()
+    if os.path.exists(p):
+        try:
+            with open(p) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _save_profile(profile: dict):
+    with open(_profile_path(), 'w', encoding='utf-8') as f:
+        json.dump(profile, f, ensure_ascii=False, indent=2)
+
+
+def extract_profile(text: str) -> dict:
+    """Extract user profile information from conversation text.
+    Uses regex patterns to detect common self-disclosure patterns (name, job, company, etc.)
+    No API key required. Can be safely called on every user message.
+    
+    Returns the current profile dict after extraction (new or unchanged).
+    """
+    if not text:
+        return _load_profile()
+    
+    profile = _load_profile()
+    changed = False
+    
+    for pattern, field in _PROFILE_PATTERNS:
+        m = re.search(pattern, text, re.IGNORECASE)
+        if m:
+            value = m.group(1).strip()
+            if not value or len(value) < 1:
+                continue
+            # Skip false positives (pronouns, common words)
+            skip_words = {"他", "她", "它", "我", "你", "我们", "你们", "他们", "这个",
+                          "that", "this", "it", "them", "him", "her", "us"}
+            if value.lower() in skip_words:
+                continue
+            # Special handling: tools field is a list
+            if field == "tools":
+                existing = profile.get("tools", [])
+                if isinstance(existing, str):
+                    existing = [existing]
+                if value not in existing:
+                    existing.append(value)
+                    profile["tools"] = existing
+                    changed = True
+            else:
+                if profile.get(field) != value:
+                    profile[field] = value
+                    changed = True
+    
+    if changed:
+        _save_profile(profile)
+    
+    return profile
+
+
+def profile_stats() -> dict:
+    """Return user profile stats."""
+    profile = _load_profile()
+    fields = [k for k, v in profile.items() if v]
+    return {"fields": fields, "count": len(fields), "profile": profile}
+
+
 def stats():
     lessons = _load_lessons()
     all_l = lessons["lessons"]
@@ -379,3 +473,14 @@ if __name__ == "__main__":
             print(f"\n🧠 Adaptive:")
             for s in learned:
                 print(f"  • {s}")
+    elif cmd == "profile":
+        text = " ".join(sys.argv[2:])
+        if text:
+            p = extract_profile(text)
+            print(f"User profile updated: {json.dumps(p, ensure_ascii=False, indent=2)}")
+        else:
+            p = _load_profile()
+            if p:
+                print(f"Current user profile: {json.dumps(p, ensure_ascii=False, indent=2)}")
+            else:
+                print("No user profile data yet.")

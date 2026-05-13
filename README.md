@@ -51,8 +51,8 @@ This is your memory's first line of defense. Unlike Integrity Check + Auto Recov
 |---|-----------|-------------|
 | 1️⃣ | **TEMPR Multi-Strategy Retrieval** | Semantic + BM25 + time-weighted — always finds what you need |
 | 2️⃣ | **Working Memory** | Survives context compression — remembers current task |
-| 3️⃣ | **Knowledge Graph** | Auto-extracts entities & relations from conversation (JSON, no database) |
-| 4️⃣ | **User Profile** | Auto-extracts user preferences, habits, facts from conversation |
+| 3️⃣ | **Knowledge Graph** | Auto-extracts entities & relations. Local regex mode (no API key needed), upgrades to semantic deep extraction with API key |
+| 4️⃣ | **User Profile** | Auto-extracts preferences, habits, facts. Local regex mode (no API key needed), upgrades to semantic deep extraction with API key |
 | 5️⃣ | **Deduplication** | SHA256 hash — same content never stored twice |
 
 ### 🧠 Learning Layer — Improve From Interaction

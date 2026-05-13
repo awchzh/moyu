@@ -77,19 +77,53 @@ def _call_llm(prompt: str) -> str:
     return ""
 
 
+def _extract_fallback(text: str) -> List[Dict]:
+    """Regex-based entity extraction fallback (no API key required).
+    Covers common patterns: X is Y, X works at Y, X uses Y, etc."""
+    triples = []
+    patterns = [
+        # Chinese patterns
+        (r"(\S{2,8})\s*是\s*(\S{2,12})(?:[，。、！？]|$)", "is_a"),
+        (r"(\S{2,8})\s*在\s*(\S{2,20})\s*(?:工作|上班|任职)", "works_at"),
+        (r"(\S{2,8})\s*(?:使用|用|用的是)\s*(\S{2,20})(?:[，。、！？]|$)", "uses"),
+        (r"(\S{2,8})\s*(?:喜欢|热爱|偏爱)\s*(\S{2,20})(?:[，。、！？]|$)", "prefers"),
+        (r"(\S{2,8})\s*(?:属于|隶属于|归属于)\s*(\S{2,20})(?:[，。、！？]|$)", "belongs_to"),
+        (r"(\S{2,8})\s*(?:开发|创建|发明)\s*(?:了)?\s*(\S{2,20})(?:[，。、！？]|$)", "created"),
+        (r"(\S{2,8})\s*(?:住在|居住于|位于)\s*(\S{2,20})(?:[，。、！？]|$)", "located_at"),
+        # English patterns
+        (r"(\S{2,20})\s+is\s+(?:a|an)\s+(\S{2,20})", "is_a"),
+        (r"(\S{2,20})\s+works?\s+(?:at|for)\s+(\S{2,30})", "works_at"),
+        (r"(\S{2,20})\s+uses\s+(\S{2,30})", "uses"),
+        (r"(\S{2,20})\s+(?:likes|loves|prefers)\s+(\S{2,30})", "prefers"),
+        (r"(\S{2,20})\s+created\s+(\S{2,30})", "created"),
+        (r"(\S{2,20})\s+(?:lives? in|is based in)\s+(\S{2,30})", "located_at"),
+        (r"(\S{2,20})\s+(?:owns?|manages?)\s+(\S{2,30})", "owns"),
+    ]
+    for pattern, rel in patterns:
+        for m in re.finditer(pattern, text, re.IGNORECASE):
+            src, tgt = m.group(1).strip(), m.group(2).strip()
+            skip_words = {"他", "她", "它", "我", "你", "这个", "那个", "什么", "怎么",
+                          "the", "a", "an", "this", "that", "it", "he", "she"}
+            if src.lower() not in skip_words and tgt.lower() not in skip_words:
+                triples.append({"source": src, "relation": rel, "target": tgt})
+    return triples
+
+
 def extract_entities(text: str) -> List[Dict]:
     prompt = ("Extract entity-relation triples from the following text. Format: EntityA | Relation | EntityB\n"
               "Relation types: " + ", ".join(RELATION_TYPES.keys()) +
               "\nIf none: output \"none\"\n\nText: " + text[:1500])
     reply = _call_llm(prompt)
     if not reply or reply.strip() == "none":
-        return []
+        return _extract_fallback(text)
     triples = []
     for line in reply.split("\n"):
         parts = [p.strip() for p in line.split("|")]
         if len(parts) == 3 and parts[2] in RELATION_TYPES:
             source, rel, target = parts
             triples.append({"source": source, "relation": rel, "target": target})
+    if not triples:
+        return _extract_fallback(text)
     return triples
 
 
