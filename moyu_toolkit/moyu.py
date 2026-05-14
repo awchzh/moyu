@@ -17,6 +17,9 @@ Usage:
     moyu compress           Show compression status
     moyu compress --now     Force manual compression
     moyu forget             Show memory lifecycle (forgetting curve)
+    moyu forget stats       Same as above
+    moyu forget config      Show current forgetting curve parameters
+    moyu forget set <k> <v> Set a parameter (demote_days, archive_days, etc.)
     moyu update             Check for updates
     moyu update now         Download & apply update
 """
@@ -281,12 +284,94 @@ def _compress(args):
 
 
 def _forget(args):
-    """Handle forget command — check forgetting curve status."""
+    """Handle forget command — status, config, and settings."""
     fc = _import("forgetting_curve")
-    if "--summary" in args:
-        print(fc.summary())
-    else:
+    if not args or args[0] in ("stats", "--stats"):
         fc.stats()
+    elif args[0] == "--summary":
+        print(fc.summary())
+    elif args[0] in ("config", "show", "--config"):
+        _forget_config()
+    elif args[0] == "set" and len(args) >= 3:
+        _forget_set(args[1], args[2])
+    elif args[0] in ("help", "--help"):
+        _forget_help()
+    else:
+        print(f"Unknown subcommand: {args[0]}")
+        _forget_help()
+
+
+def _forget_help():
+    print("moyu forget commands:")
+    print("  moyu forget                  Show memory lifecycle stats")
+    print("  moyu forget stats            Same as above")
+    print("  moyu forget --summary        One-line summary")
+    print("  moyu forget config           Show current config")
+    print("  moyu forget set <key> <val>  Set a parameter:")
+    print("    demote_days    — Safety window before demotion (default: 14)")
+    print("    archive_days   — Days after demotion before archivable (default: 60)")
+    print("    density_window — Max access timestamps tracked (default: 20)")
+
+
+def _forget_config():
+    """Show current forgetting_curve config from config.yaml."""
+    import yaml
+    cfg_path = os.path.join(TOOLKIT_DIR, "config.yaml")
+    if not os.path.exists(cfg_path):
+        print("Config not found")
+        return
+    with open(cfg_path) as f:
+        cfg = yaml.safe_load(f) or {}
+    fc = cfg.get("forgetting_curve", {})
+    print()
+    print("  Forgetting Curve Config")
+    print("=" * 35)
+    for key in ("demote_days", "archive_days", "density_window"):
+        val = fc.get(key, "?")
+        print(f"  {key:20s}  {val}")
+    print(f"  {'enabled':20s}  {fc.get('enabled', True)}")
+    print()
+
+
+def _forget_set(key: str, value: str):
+    """Set a forgetting_curve parameter in config.yaml."""
+    import yaml
+    cfg_path = os.path.join(TOOLKIT_DIR, "config.yaml")
+    if not os.path.exists(cfg_path):
+        print("Config not found")
+        return
+    with open(cfg_path) as f:
+        cfg = yaml.safe_load(f) or {}
+
+    allowed = {"demote_days", "archive_days", "density_window", "enabled"}
+    if key not in allowed:
+        print(f"Unknown key: {key}")
+        print(f"Allowed: {', '.join(sorted(allowed))}")
+        return
+
+    # Coerce type: bool for enabled, int for the rest
+    try:
+        if key == "enabled":
+            val = value.lower() in ("true", "yes", "1", "on")
+        else:
+            val = int(value)
+            if val < 1:
+                raise ValueError
+    except (ValueError, TypeError):
+        print(f"Invalid value for {key}: '{value}'. Expected a positive integer.")
+        return
+
+    if "forgetting_curve" not in cfg:
+        cfg["forgetting_curve"] = {}
+    cfg["forgetting_curve"][key] = val
+
+    with open(cfg_path, "w") as f:
+        yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+
+    print(f"✅ Set forgetting_curve.{key} = {val}")
+
+    # Show updated config
+    _forget_config()
 
 
 def _update(args):

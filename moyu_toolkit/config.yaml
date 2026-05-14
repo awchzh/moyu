@@ -1,75 +1,53 @@
-# MOYU Configuration
-# Copy this file to config.yaml and fill in your API info
-
+api:
+  api_key: your-api-key-here
+  base_url: https://api.openai.com/v1
+  chat_model: gpt-4o-mini
+  embedding_model: text-embedding-3-small
+  provider: openai
+compression:
+  auto_threshold: 0.9
+  budget_chars: 2000
+  enabled: true
+  warning_threshold: 0.8
+forgetting_curve:
+  archive_days: 60
+  demote_days: 14
+  density_window: 20
+  enabled: true
+learner:
+  correction_signals:
+  - 不是
+  - 不对
+  - 错了
+  - 应该是
+  - 不要
+  - 记住
+  - 我告诉过你
+  - 我说过
+  - 别
+  - 别再
+  - 你又
+  - 还说
+  - 'no'
+  - wrong
+  - don't
+  - stop
+  - hey
+  - remember
+  - i told you
+  - not
+  - never
+  - hold on
+  - wait
+  - actually
+  - correction
+  enabled: true
 memory:
-  # Memory data storage path
-  storage_path: "./memory_data"
-  
-  # TEMPR retrieval weights (sum doesn't need to be 1, will be auto-normalized)
+  storage_path: ./memory_data
   weights:
-    semantic: 0.5
     keyword: 0.3
     recency: 0.2
-
-api:
-  # LLM API configuration (for embedding and knowledge graph extraction)
-  # Supports all OpenAI-compatible formats
-  provider: "openai"  # or deepseek, minimax, doubao, etc.
-  api_key: "your-api-key-here"
-  base_url: "https://api.openai.com/v1"
-  embedding_model: "text-embedding-3-small"
-  chat_model: "gpt-4o-mini"
-
-learner:
-  # Learner signal module configuration
-  enabled: true
-  # Trigger word list (modify per speaking habits. Leave empty to use built-in defaults)
-  correction_signals:
-    - "不是"
-    - "不对"
-    - "错了"
-    - "应该是"
-    - "不要"
-    - "记住"
-    - "我告诉过你"
-    - "我说过"
-    - "别"
-    - "别再"
-    - "你又"
-    - "还说"
-    # English
-    - "no"
-    - "wrong"
-    - "don't"
-    - "stop"
-    - "hey"
-    - "remember"
-    - "i told you"
-    - "not"
-    - "never"
-    - "hold on"
-    - "wait"
-    - "actually"
-    - "correction"
-
+    semantic: 0.5
 security:
-  # Security module configuration
-  # Auto-generated after first run of `python3 security.py setup` to set password
-  # safe_word_hash: ""  # SHA256 hash, plaintext not stored
-  lockout_threshold: 3   # Lock after this many consecutive failures
-  lockout_minutes: 30    # Lockout duration in minutes
-
-compression:
-  # Context-aware compression (V2.0)
-  enabled: true
-  budget_chars: 2000      # Target injection budget in chars (~500 tokens)
-  warning_threshold: 0.8  # Warn when usage exceeds 80%: ⚠️ 建议压缩
-  auto_threshold: 0.9     # Auto-compress at 90% (silent, logged)
-  # Manual trigger command: moyu compress --now
-  # Custom trigger symbol (e.g. 🚚): set in your agent config
-
-forgetting_curve:
-  # Memory lifecycle (V2.0)
-  enabled: true
-  demote_days: 14    # Memories not accessed in 14 days → demoted (not auto-injected)
-  archive_days: 60   # Demoted + not accessed in 60 days → mark as archivable
+  lockout_minutes: 30
+  lockout_threshold: 3
