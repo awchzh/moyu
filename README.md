@@ -27,26 +27,84 @@ python3 agent_memory.py search "what did we talk about"
 
 **One command to rule them all:**
 
-```bash
-python3 moyu_toolkit/moyu.py --help
+```
+moyu_toolkit/moyu.py help
 ```
 
-All MOYU capabilities available from a single entry point — search, stats, setup, demo, and more.
+## Command Reference
 
-**🛡️ Three-Layer Defense Chain — protect your memory from tampering:**
+All commands are available through the unified CLI:
 
 ```bash
-# Check your security status
-cd moyu_toolkit && python3 moyu.py audit
+cd moyu_toolkit && python3 moyu.py <command> [args]
 ```
 
-**⚡ Pre-operation** — Set a password (`moyu setup`). Dangerous operations (file deletion, config changes, external scripts) require verification before they reach your memory files. Accidental `rm` by users or misbehaving agents? Blocked. [Learn more →](moyu_toolkit/security.py)
+### 🛡️ Security
 
-**🔍 On-wake detection** — Tampered files are detected automatically. Run `moyu check` for manual verification. [Learn more →](moyu_toolkit/defense_toolkit/integrity_checker.py)
+| Command | Description |
+|---------|-------------|
+| `moyu setup` | Set a security password (dangerous operations need password confirmation) |
+| `moyu verify <type> [desc]` | Verify a dangerous operation (delete, modify config, etc.) |
+| `moyu unlock` | Unlock the security system (locked after 3 failed attempts) |
+| `moyu check` | Check memory file integrity (SHA256 comparison) |
+| `moyu audit` | Full security audit — all three defense layers at a glance |
+| `moyu init` | Initialize integrity verification manifest |
 
-**🔄 Post-tamper recovery** — Automatically restores from daily backups. A clean backup is created each day on first successful verification. 3 days of history kept.
+### 🧠 Memory & Retrieval
 
----
+| Command | Description |
+|---------|-------------|
+| `moyu search <query>` | Search memories using TEMPR multi-strategy retrieval |
+| `moyu stats` | Show all statistics (memory, context, learner, security) |
+| `moyu status` | System status with defense chain visualization |
+| `moyu inject` | Get behavioral rules for injection into system prompt |
+| `moyu signals` | View active trigger words (learner) |
+
+### ⏳ Lifecycle & Compression
+
+| Command | Description |
+|---------|-------------|
+| `moyu forget` | Show forgetting curve status (two-stage gating, density analysis) |
+| `moyu forget config` | Show current forgetting curve parameters |
+| `moyu forget set <key> <val>` | Set: `demote_days`, `archive_days`, `density_window`, `enabled` |
+| `moyu forget --summary` | One-line summary of memory lifecycle |
+| `moyu compress` | Show compression status and context usage |
+| `moyu compress --now` | Force manual compression |
+| `moyu context` | Show context usage percentage in one line |
+
+### 🔄 Learning & Reflection
+
+| Command | Description |
+|---------|-------------|
+| `moyu learn <text>` | Learn from a user correction |
+| `moyu detect <text>` | Detect correction signals in text |
+| `moyu reflect` | Run self-reflection (analyze connections & contradictions) |
+
+### 📚 Knowledge Base
+
+| Command | Description |
+|---------|-------------|
+| `moyu kb list` | List all knowledge files |
+| `moyu kb search <query>` | Search knowledge files |
+| `moyu kb index` | Rebuild keyword index |
+| `moyu kb read <file>` | Read a knowledge file |
+
+### 🔗 Session & Updates
+
+| Command | Description |
+|---------|-------------|
+| `moyu bridge` | Show session bridge status |
+| `moyu update` | Check for updates on GitHub |
+| `moyu update now` | Download and apply the latest update |
+
+### 🎭 Demo
+
+| Command | Description |
+|---------|-------------|
+| `moyu demo` | Show all 15 capabilities with examples |
+
+
+## File Structure
 
 ## 15 Capabilities — Grouped by Domain
 
@@ -81,7 +139,7 @@ cd moyu_toolkit && python3 moyu.py audit
 | # | Capability | What it does |
 |---|-----------|-------------|
 | 1️⃣2️⃣ | **Context-Aware Compression** | Auto-compresses when usage exceeds 90% — defers low-priority items, truncates long memories, saves tokens. Manual trigger (`moyu compress --now`) and status check (`moyu context`) also available. |
-| 1️⃣3️⃣ | **Forgetting Curve** | Automatically demotes memories not accessed for 14 days — but ONLY when context is under pressure (low-frequency users keep everything). Demoted memories skip automatic injection but remain searchable. Re-accessing restores them. |
+| 1️⃣3️⃣ | **Forgetting Curve** | Two-stage gating: 14-day safety window + access density trend analysis. Stable interval patterns keep memories active past the window; widening intervals trigger demotion. Only runs when context is under pressure (low-frequency users keep everything). `/moyu forget config` and `/moyu forget set <key> <val>` for parameter adjustment. |
 | 1️⃣4️⃣ | **Memory Merge** | Detects related memories by keyword overlap and merges them into a single composite entry. Original details are preserved in an expandable field — nothing is lost. |
 | 1️⃣5️⃣ | **Self-Update** | Checks GitHub for new releases and updates the toolkit in place — preserving memory_data and user config. `moyu update` to check, `moyu update now` to apply. |
 
@@ -135,7 +193,7 @@ moyu_toolkit/
 ├── knowledge_base.py         # Workflow knowledge base — searchable recipe book (V2.0.3)
 ├── moyu.py                    # Unified CLI entry point
 ├── context_manager.py         # Context-aware compression (V2.0)
-├── forgetting_curve.py        # Memory lifecycle demotion (V2.0)
+├── forgetting_curve.py        # Memory lifecycle — two-stage gating (V2.0.5)
 ├── memory_merge.py            # Topic-aware memory merge (V2.0)
 ├── session_bridge.py          # Cross-session carryover (V2.0)
 ├── updater.py                 # Self-update (V2.0)
