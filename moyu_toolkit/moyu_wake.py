@@ -46,6 +46,15 @@ def wake(dry_run: bool = False) -> str:
     sb = _import("session_bridge")
     up = _import("updater")
     sr = _import("self_reflection")
+    ic = _import("defense_toolkit.integrity_checker")
+
+    # ── Step 0: Silent integrity check + daily backup ──
+    # Runs verify() which checks hashes and creates daily backup on success.
+    # User only sees a message if tampering was detected.
+    try:
+        ic.verify()
+    except Exception:
+        pass
 
     # ── Step 0: Check context pressure level ──
     status = cm.check_status()

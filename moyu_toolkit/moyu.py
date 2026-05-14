@@ -56,6 +56,87 @@ def cmd_stats():
     print()
 
 
+def cmd_audit():
+    """Security audit — one-report summary of all defense layers."""
+    print()
+    print("=" * 52)
+    print("  🛡️  MOYU Security Audit")
+    print("=" * 52)
+
+    # Layer 1: Memory Self-Defense (pre-operation)
+    sec_mod = _import("security")
+    import json as _json
+    import os as _os
+    # Read security config directly (avoid sec.status() which prints)
+    sec_cfg_path = _os.path.join(TOOLKIT_DIR, "memory_data", "security_config.json")
+    has_pw = False
+    failures = 0
+    if _os.path.exists(sec_cfg_path):
+        try:
+            with open(sec_cfg_path) as _f:
+                _cfg = _json.load(_f)
+                has_pw = bool(_cfg.get("safe_word_hash", ""))
+        except Exception:
+            pass
+    # Count failures
+    fail_path = _os.path.join(TOOLKIT_DIR, "memory_data", "security_failures.json")
+    if _os.path.exists(fail_path):
+        try:
+            with open(fail_path) as _f:
+                failures = len(_json.load(_f))
+        except Exception:
+            pass
+    print(f"\n  ⚡ Layer 1 — Pre-operation (security.py)")
+    if has_pw:
+        print(f"     ✅  Password set")
+    else:
+        print(f"     ⚠️   Password not set — run `moyu setup`")
+    if failures:
+        print(f"     ⚠️   {failures} recent failed attempts")
+
+    # Layer 2: Integrity Check (on-wake detection)
+    ic = _import("defense_toolkit.integrity_checker")
+    import os as _os
+    storage_base = _os.environ.get("MOYU_STORAGE",
+                                    _os.path.join(TOOLKIT_DIR, "memory_data"))
+    manifest_path = _os.path.join(storage_base, "manifest.json")
+    backup_dir = _os.path.join(storage_base, "backups")
+    has_manifest = _os.path.exists(manifest_path)
+    print(f"\n  🔍 Layer 2 — On-wake detection (integrity_checker.py)")
+    if has_manifest:
+        print(f"     ✅  Manifest initialized")
+        # Count daily backups
+        if _os.path.isdir(backup_dir):
+            backups = [f for f in _os.listdir(backup_dir) if f.startswith("daily_")]
+            print(f"     ✅  {len(backups)} daily backup(s) available")
+        else:
+            print(f"     ⚠️   No backups yet (will be created on next wake)")
+    else:
+        print(f"     ⚠️   Manifest not initialized — run `moyu init`")
+
+    # Layer 3: Auto Recovery (post-tamper)
+    print(f"\n  🔄 Layer 3 — Post-tamper recovery")
+    if has_manifest and _os.path.isdir(backup_dir):
+        backups = [f for f in _os.listdir(backup_dir) if f.startswith("daily_")]
+        if backups:
+            dates = set()
+            for f in backups:
+                parts = f.split("_", 2)
+                if len(parts) >= 2:
+                    dates.add(parts[1])
+            print(f"     ✅  Auto-recovery ready — {len(dates)} days of backup available")
+        else:
+            print(f"     ⚠️   No backup data yet")
+    else:
+        print(f"     —  Not ready (run `moyu init` first)")
+
+    print()
+    print(f"  {'=' * 52}")
+    all_good = has_pw and has_manifest
+    print(f"  {'✅ All defense layers operational' if all_good else '⚠️  Some layers need attention'}")
+    print()
+
+
 def cmd_status():
     import yaml
     print()
@@ -76,6 +157,33 @@ def cmd_status():
     else:
         print("  Storage:  ⚠️ Not initialized")
     print(f"  Security: {'✅ ready' if os.path.exists(os.path.join(TOOLKIT_DIR, 'security.py')) else '⚠️ Not available'}")
+    print()
+    # Defense chain visualization
+    print(f"  {'─' * 48}")
+    print(f"  🛡️  Defense Chain")
+    print(f"  {'─' * 48}")
+    # Layer 1 — Pre-op (read config directly, avoid sec.status() which prints)
+    import json as _json2
+    import os as _os2
+    _sec_cfg = {}
+    _scp = _os2.path.join(TOOLKIT_DIR, "memory_data", "security_config.json")
+    if _os2.path.exists(_scp):
+        try:
+            with open(_scp) as _f:
+                _sec_cfg = _json2.load(_f)
+        except Exception:
+            pass
+    _pw_set = bool(_sec_cfg.get("safe_word_hash", ""))
+    print(f"  ⚡ Pre-op:   {'✅ Password Set' if _pw_set else '⚠️ No Password'}  (moyu setup)")
+    # Layer 2 — On-wake
+    _sto = _os2.environ.get("MOYU_STORAGE", _os2.path.join(TOOLKIT_DIR, "memory_data"))
+    _has_man = _os2.path.exists(_os2.path.join(_sto, "manifest.json"))
+    print(f"  🔍 On-wake:  {'✅ Manifest Ready' if _has_man else '⚠️ Not Initialized'}  (moyu init)")
+    # Layer 3 — Post-tamper
+    _bak = _os2.path.join(_sto, "backups")
+    _has_bak = _os2.path.isdir(_bak) and any(f.startswith("daily_") for f in _os2.listdir(_bak)) if _os2.path.isdir(_bak) else False
+    print(f"  🔄 Post:     {'✅ Recovery Ready' if _has_bak else '⚠️ No Backups Yet'}")
+    print(f"  {'─' * 48}")
     print()
 
 
@@ -105,12 +213,14 @@ CMD_TABLE = {
     "check":      lambda args: _call_func("defense_toolkit.integrity_checker", "verify", args),
     "init":       lambda args: _call_func("defense_toolkit.integrity_checker", "init_manifest", args),
     "compress":   lambda args: _compress(args),
+    "context":    lambda args: print(_import("context_manager").status_line()),
     "forget":     lambda args: _forget(args),
     "lifecycle":  lambda args: _forget(args),  # alias
     "bridge":     lambda args: _import("session_bridge").status(),
     "update":     lambda args: _update(args),
     "demo":       lambda args: cmd_demo(),
     "reflect":    lambda args: _call_func("self_reflection", "run", []),
+    "audit":      lambda args: cmd_audit(),
     "kb":         lambda args: _kb_handler(args),
 }
 
@@ -253,6 +363,37 @@ def main():
 
     cmd = sys.argv[1]
     rest = sys.argv[2:]
+
+    # ── Silent integrity check + daily backup ──
+    # Runs verify() on every moyu command. Checks hashes, triggers daily backup.
+    # User only sees output if tampering is detected or manifest is missing.
+    if cmd not in ("setup", "init", "audit", "check", "help", "--help", "-h"):
+        try:
+            ic = _import("defense_toolkit.integrity_checker")
+            ic.verify()
+        except Exception:
+            pass
+
+    # ── Security initialization prompt (silent) ──
+    if cmd not in ("setup", "init", "audit", "help", "--help", "-h"):
+        try:
+            sec = _import("security")
+            sec_info = sec.status()
+            ic_module = _import("defense_toolkit.integrity_checker")
+            import os as _os3
+            sto = _os3.environ.get("MOYU_STORAGE",
+                                    _os3.path.join(TOOLKIT_DIR, "memory_data"))
+            man = _os3.path.join(sto, "manifest.json")
+            if not sec_info.get("password_set", False) or not _os3.path.exists(man):
+                print()
+                print("  ⚡ Tip: Protect your memory layer!")
+                if not sec_info.get("password_set", False):
+                    print("     Run `moyu setup` to set a memory self-defense password")
+                if not _os3.path.exists(man):
+                    print("     Run `moyu init` to initialize integrity verification")
+                print()
+        except Exception:
+            pass
 
     handler = CMD_TABLE.get(cmd)
     if handler:

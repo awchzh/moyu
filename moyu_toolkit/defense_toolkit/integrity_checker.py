@@ -47,12 +47,87 @@ def init_manifest():
     log(f"Manifest initialized ({len(manifest['files'])} files)", "PASS")
 
 
+def _daily_backup_key() -> str:
+    """Return today's backup key (YYYY-MM-DD), used to group daily backups."""
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def _daily_backup_exists() -> bool:
+    """Check if a backup for today already exists."""
+    today = _daily_backup_key()
+    if not os.path.isdir(BACKUP_DIR):
+        return False
+    for fname in os.listdir(BACKUP_DIR):
+        if fname.startswith(f"daily_{today}"):
+            return True
+    return False
+
+
+def _prune_old_daily_backups():
+    """Remove daily backups older than 3 days, keep 3 most recent days."""
+    if not os.path.isdir(BACKUP_DIR):
+        return
+    # Group backup files by date
+    daily_dirs = {}
+    for fname in os.listdir(BACKUP_DIR):
+        if fname.startswith("daily_"):
+            # Extract date from filename: daily_2026-05-13_*.json
+            parts = fname.split("_", 2)
+            if len(parts) >= 2:
+                date_key = parts[1]
+                if date_key not in daily_dirs:
+                    daily_dirs[date_key] = []
+                daily_dirs[date_key].append(fname)
+
+    # Keep only 3 most recent dates
+    sorted_dates = sorted(daily_dirs.keys(), reverse=True)
+    for old_date in sorted_dates[3:]:
+        for fname in daily_dirs[old_date]:
+            fpath = os.path.join(BACKUP_DIR, fname)
+            try:
+                os.remove(fpath)
+            except Exception:
+                pass
+
+
+def _backup_verified_state(manifest: dict):
+    """Backup current files after successful verification.
+    Only runs once per day. Keeps 3 days of backup.
+    
+    This ensures backups always reflect a clean state — 
+    if today's session was tampered, yesterday's backup is still safe."""
+    if not manifest or "files" not in manifest:
+        return
+    if _daily_backup_exists():
+        return  # Already backed up today
+    
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    today = _daily_backup_key()
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backed_up = 0
+    for entry in manifest.get("files", []):
+        src = os.path.join(BASE, entry["path"])
+        if not os.path.exists(src):
+            continue
+        name, ext = os.path.splitext(entry["path"])
+        bak_name = f"daily_{today}_{name}_{ts}.json"
+        bak_path = os.path.join(BACKUP_DIR, bak_name)
+        try:
+            shutil.copy2(src, bak_path)
+            backed_up += 1
+        except Exception:
+            pass
+    _prune_old_daily_backups()
+    log(f"Daily backup complete: {backed_up} files ({today})", "INFO")
+
+
 def verify():
     if not os.path.exists(MANIFEST_PATH):
         log("manifest.json not found. Run 'init' first.", "CRITICAL")
         return False
     with open(MANIFEST_PATH) as f:
         manifest = json.load(f)
+    # Back up current state before checking — gives _auto_recover something to restore
     all_ok = True
     results = []
     for entry in manifest["files"]:
@@ -72,18 +147,35 @@ def verify():
             log(f"✓ {entry['path']}", "PASS")
             results.append({"file": entry["path"], "status": "OK"})
     if all_ok:
-        log("All checks passed \u2713", "PASS")
+        # Only backup clean state — never backup tampered data
+        _backup_verified_state(manifest)
+        log("All checks passed ✓", "PASS")
     return all_ok
 
 
 def _auto_recover(fpath, manifest):
-    """Restore from backup"""
+    """Restore from the most recent daily backup."""
     if not os.path.isdir(BACKUP_DIR):
         log(f"  No backup directory, cannot restore {fpath}", "WARN")
         return
-    backups = sorted([f for f in os.listdir(BACKUP_DIR) if f.endswith(".json")], reverse=True)
-    for bf in backups:
-        bak_path = os.path.join(BACKUP_DIR, bf)
+    # Find the most recent daily backup for this file across all dates
+    name_stub = fpath.replace(".json", "")
+    candidates = []
+    for fname in os.listdir(BACKUP_DIR):
+        if not fname.startswith("daily_"):
+            continue
+        if name_stub not in fname:
+            continue
+        if not fname.endswith(".json"):
+            continue
+        candidates.append(fname)
+    if not candidates:
+        log(f"  No backup found for {fpath}", "WARN")
+        return
+    # Sort by date descending (newest first)
+    candidates.sort(reverse=True)
+    for bak_name in candidates:
+        bak_path = os.path.join(BACKUP_DIR, bak_name)
         target = os.path.join(BASE, fpath)
         try:
             shutil.copy2(bak_path, target)
@@ -93,11 +185,11 @@ def _auto_recover(fpath, manifest):
                     e["sha256"] = new_hash
             with open(MANIFEST_PATH, 'w') as f:
                 json.dump(manifest, f, ensure_ascii=False, indent=2)
-            log(f"  \u2705 Restored from {bf}", "PASS")
+            log(f"  ✅ Restored from {bak_name}", "PASS")
             return
         except Exception as e:
-            log(f"  \u26a0\ufe0f Restore failed: {e}", "WARN")
-    log(f"  \u274c All backups failed", "CRITICAL")
+            log(f"  ⚠️ Restore failed: {e}", "WARN")
+    log(f"  ❌ All backups failed", "CRITICAL")
 
 
 def forensic_analysis(tampered_file: str):

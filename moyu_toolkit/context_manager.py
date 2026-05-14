@@ -294,6 +294,26 @@ def last_report_message() -> str:
     return f"刚自动压了一轮，省了 ~{saved_tok} token（{pct}% → {after_pct}%）"
 
 
+def status_line() -> str:
+    """Return a single-line context status, matching the style of Hermes Web UI.
+    
+    Example output:
+        📊 Context window: 37% used (63% left) — Auto-compress at 80%
+    
+    Put this in your AI's system prompt to auto-show on every reply:
+    'At the end of each response, if context is above 80%, append a status line.'
+    """
+    payload = InjectionPayload()
+    pct = payload.usage_pct()
+    level = payload.level()
+    if pct == 0:
+        return ""
+    warn_at = int(DEFAULT_WARN * 100)
+    auto_at = int(DEFAULT_AUTO * 100)
+    left = 100 - int(pct)
+    return f"📊 Context window: {pct:.0f}% used ({left}% left) — Auto-compress at {auto_at}%"
+
+
 def warning_message() -> str:
     """Return a warning message if usage is above the warning threshold.
     Returns empty string if under threshold."""

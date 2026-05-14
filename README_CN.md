@@ -1,6 +1,6 @@
-# MOYU — AI Agent 记忆工具包
+# MOYU — AI Agent 安全记忆工具包
 
-**15 大记忆能力，让 AI Agent 跨会话真正记得你是谁。**
+**零信任记忆基础设施。给你的 AI Agent 装上可审计、可恢复、可自我保护的安全记忆层。无需 Docker、无需数据库、无需注册——纯 Python，即插即用。**
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -34,13 +34,21 @@ python3 moyu_toolkit/moyu.py --help
 
 所有 MOYU 功能统一入口——检索、统计、设置、演示，一个命令搞定。
 
-**（可选）记忆自我保护 — 在误删之前阻止它：**
+**🛡️ 三层防御链 — 保护你的记忆不被篡改：**
 
 ```bash
 cd moyu_toolkit && python3 security.py setup
 ```
 
-这是你记忆的第一道防火墙。跟完整性校验（事后检测篡改）不同，记忆自我保护在操作**到达记忆文件之前**就阻止它。设好密码后，删除文件、修改配置、运行外部脚本等危险操作都需验证。用户手滑 rm？其他 AI Agent 误操作？全部拦下。[查看源码 →](moyu_toolkit/security.py)
+这是你记忆的完整防御链，覆盖事前→事中→事后三个环节：
+
+**⚡ 事前防御** — 设好密码后（`moyu setup`），删除文件、修改配置、运行外部脚本等危险操作都需验证。用户手滑 rm？其他 AI Agent 误操作？全部拦下。[查看源码 →](moyu_toolkit/security.py)
+
+**🔍 事中检测** — 记忆文件被篡改时自动发现。运行 `moyu check` 手动校验。[查看源码 →](moyu_toolkit/defense_toolkit/integrity_checker.py)
+
+**🔄 事后恢复** — 检测到篡改后自动从每日备份恢复。每日首次通过校验时自动创建备份，保留最近 3 天版本。
+
+查看完整安全状态：`moyu audit`
 
 ---
 
@@ -68,7 +76,7 @@ cd moyu_toolkit && python3 security.py setup
 | # | 能力 | 说明 |
 |---|------|------|
 | 8️⃣ | **完整性校验** | 检测记忆文件篡改 |
-| 9️⃣ | **自动恢复** | 检测到篡改后自动从备份恢复 |
+| 9️⃣ | **完整性校验与恢复** | `moyu check` 手动执行文件完整性校验，校验通过后自动备份当日状态，保留最近 3 天可回溯版本。每日凌晨自动清理过期备份。 |
 | 🔟 | **法医分析** | 分析篡改来源——指令覆盖、提示词注入等 |
 | 1️⃣1️⃣ | **记忆自我保护** | 第一道防火墙——关键操作前密码验证，操作到达记忆文件之前就阻止，防误删防篡改 |
 
@@ -95,7 +103,7 @@ cd moyu_toolkit && python3 security.py setup
 | 用户画像 | ❌ 手动 | **✅ 自动** |
 | 学习纠正 | ❌ 无 | **✅ 自动检测与累积** |
 | 完整性校验 | ❌ 无 | **✅ manifest + SHA256** |
-| 自动恢复 | ❌ 无 | **✅ 从备份恢复** |
+| 自动恢复 | ❌ 无 | **✅ `moyu check` 手动校验 / 自动备份最近 3 天** |
 | 法医分析 | ❌ 无 | **✅ 攻击来源分析** |
 | 记忆自我保护 | ❌ 无 | **✅ 事前验证，操作前拦截** |
 | 上下文自适应压缩 | ❌ 无 | **✅ 90%自动静默压缩 / 手动触发** |

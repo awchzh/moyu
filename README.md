@@ -1,6 +1,6 @@
-# MOYU — AI Agent Memory Toolkit
+# MOYU — AI Agent Secure Memory Toolkit
 
-**15 memory capabilities for your AI Agent. Remember who you are across conversations. No code rewrite required.**
+**Zero-trust memory infrastructure for your AI Agent. Auditable, recoverable, self-defending memory. No Docker, no database, no registration — pure Python, copy & use.**
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -33,13 +33,18 @@ python3 moyu_toolkit/moyu.py --help
 
 All MOYU capabilities available from a single entry point — search, stats, setup, demo, and more.
 
-**(Optional) Memory Self-Defense — prevent accidental deletion & tampering before they happen:
+**🛡️ Three-Layer Defense Chain — protect your memory from tampering:**
 
 ```bash
-cd moyu_toolkit && python3 security.py setup
+# Check your security status
+cd moyu_toolkit && python3 moyu.py audit
 ```
 
-This is your memory's first line of defense. Unlike Integrity Check + Auto Recovery (which detect tampering after the fact), Memory Self-Defense stops dangerous operations **before** they reach your memory files. Set a password — operations that could delete or corrupt your memory (file deletion, config changes, external scripts) will require verification. Accidental `rm` by users or misbehaving agents? Blocked. [Learn more →](moyu_toolkit/security.py)
+**⚡ Pre-operation** — Set a password (`moyu setup`). Dangerous operations (file deletion, config changes, external scripts) require verification before they reach your memory files. Accidental `rm` by users or misbehaving agents? Blocked. [Learn more →](moyu_toolkit/security.py)
+
+**🔍 On-wake detection** — Tampered files are detected automatically. Run `moyu check` for manual verification. [Learn more →](moyu_toolkit/defense_toolkit/integrity_checker.py)
+
+**🔄 Post-tamper recovery** — Automatically restores from daily backups. A clean backup is created each day on first successful verification. 3 days of history kept.
 
 ---
 
@@ -67,7 +72,7 @@ This is your memory's first line of defense. Unlike Integrity Check + Auto Recov
 | # | Capability | What it does |
 |---|-----------|-------------|
 | 8️⃣ | **Integrity Verification** | Detects memory file tampering on wake |
-| 9️⃣ | **Auto Recovery** | Automatically restores from backup when tampering detected |
+| 9️⃣ | **Integrity Check & Recovery** | Run `moyu check` to verify file integrity. On pass, auto-saves daily backup (keeps 3 days). Recover from any clean backup if tampered. |
 | 🔟 | **Forensic Analysis** | Analyzes what changed and how — instruction override, prompt injection detection |
 | 1️⃣1️⃣ | **Memory Self-Defense** | First line of defense — prevents dangerous operations before they reach your memory files. Password verification, auto-lockout, audit trail. |
 
@@ -94,7 +99,7 @@ This is your memory's first line of defense. Unlike Integrity Check + Auto Recov
 | User profile | ❌ Manual only | **✅ Auto-extraction** |
 | Learn from corrections | ❌ None | **✅ Auto-detect & accumulate** |
 | Integrity check | ❌ None | **✅ manifest + SHA256** |
-| Auto recovery | ❌ None | **✅ From backup** |
+| Auto recovery | ❌ None | **✅ `moyu check` manual verify / auto backup last 3 days** |
 | Forensic analysis | ❌ None | **✅ Tamper source analysis** |
 | Memory self-defense | ❌ None | **✅ Pre-verification, blocks before damage** |
 | Context-aware compression | ❌ None | **✅ Auto at 90%, manual trigger** |
