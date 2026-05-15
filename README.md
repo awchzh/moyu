@@ -138,8 +138,8 @@ cd moyu_toolkit && python3 moyu.py <command> [args]
 
 | # | Capability | What it does |
 |---|-----------|-------------|
-| 1️⃣2️⃣ | **Context-Aware Compression** | Auto-compresses when usage exceeds 90% — defers low-priority items, truncates long memories, saves tokens. Manual trigger (`moyu compress --now`) and status check (`moyu context`) also available. |
-| 1️⃣3️⃣ | **Forgetting Curve** | Two-stage gating: 14-day safety window + access density trend analysis. Stable interval patterns keep memories active past the window; widening intervals trigger demotion. Only runs when context is under pressure (low-frequency users keep everything). `/moyu forget config` and `/moyu forget set <key> <val>` for parameter adjustment. |
+| 1️⃣2️⃣ | **Context-Aware Compression** | Two-tier graduated compression: mild (70%+) truncates long memories, auto (85%+) aggressively demotes non-critical items. Compression preserves traceability — original content saved to `refs/` before truncation, retrievable via `moyu ref <name>`. Manual trigger (`moyu compress --now`), status (`moyu compress`), and parameter adjustment (`moyu compress config` / `moyu compress set`) all available. |
+| 1️⃣3️⃣ | **Forgetting Curve** | Three-stage gating: 14-day safety window → access density trend analysis → scene association protection. Frequently used topics protect related memories from being forgotten, even past the window. All parameters adjustable via `moyu forget config` and `moyu forget set`. |
 | 1️⃣4️⃣ | **Memory Merge** | Detects related memories by keyword overlap and merges them into a single composite entry. Original details are preserved in an expandable field — nothing is lost. |
 | 1️⃣5️⃣ | **Self-Update** | Checks GitHub for new releases and updates the toolkit in place — preserving memory_data and user config. `moyu update` to check, `moyu update now` to apply. |
 

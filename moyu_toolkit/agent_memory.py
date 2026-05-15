@@ -28,8 +28,9 @@ from typing import List, Dict, Optional, Tuple
 # Default path, can be overridden via MOYU_STORAGE environment variable
 STORAGE_PATH = os.environ.get("MOYU_STORAGE", os.path.join(os.path.dirname(__file__), "memory_data"))
 
-# TEMPR retrieval weights
+# TEMPR retrieval weights (used only as fallback when RRF disabled)
 TEMPR_WEIGHTS = {"semantic": 0.5, "keyword": 0.3, "recency": 0.2}
+RRF_K = 60  # RRF constant — higher = less boost from high ranks
 SEMANTIC_FALLBACK_THRESHOLD = 0.1
 
 # n-gram fallback configuration
@@ -249,7 +250,12 @@ def batch_index():
 
 
 def search(query: str, top_k: int = 5) -> list:
-    """TEMPR multi-strategy retrieval"""
+    """TEMPR multi-strategy retrieval with RRF fusion.
+
+    Each strategy (semantic, keyword, recency) produces an independent ranked
+    list. Reciprocal Rank Fusion combines them: items appearing high in
+    multiple lists get a boost, regardless of score magnitude differences.
+    """
     idx = _load_index()
     if not idx["vectors"]:
         return []
@@ -260,12 +266,53 @@ def search(query: str, top_k: int = 5) -> list:
     bm25_tok, bm25_df, bm25_avg = _build_bm25_index(summaries)
     total = len(summaries)
     q_vec = get_embedding(query, is_query=True)
-    scored = []
+    q_words = re.findall(r'[\u4e00-\u9fff]|[a-zA-Z0-9]+', query.lower())
+
+    # Compute individual strategy scores for all entries
+    sem_scores = []
+    bm25_scores = []
+    recency_scores = []
+
     for i, entry in enumerate(idx["vectors"]):
         sem = cosine_similarity(q_vec, entry["vector"]) if q_vec else 0.0
-        raw = _tempr_score(query, summaries[i], entry.get("timestamp", ""),
-                           sem, bm25_tok[i], bm25_df, bm25_avg, total)
-        scored.append((raw, entry))
+        sem_scores.append(sem)
+
+        # BM25 keyword score
+        bm25 = _bm25_score(q_words, bm25_tok[i], bm25_avg, len(bm25_tok[i]), bm25_df, total)
+        bm25_scores.append(min(1.0, bm25 / 5.0))
+
+        # Recency score
+        try:
+            mt = datetime.fromisoformat(entry.get("timestamp", "").replace("Z", "+00:00"))
+            age = max(0, (datetime.now() - mt).total_seconds() / 3600)
+            recency_scores.append(max(0.1, 1.0 - age / (30 * 24)))
+        except Exception:
+            recency_scores.append(0.5)
+
+    # Rank within each strategy (1-indexed)
+    def _ranks(scores: list) -> list:
+        """Return rank (1=best) for each position."""
+        ranked = sorted(range(len(scores)), key=lambda i: -scores[i])
+        ranks = [0] * len(scores)
+        for pos, idx in enumerate(ranked):
+            ranks[idx] = pos + 1
+        return ranks
+
+    sem_ranks = _ranks(sem_scores)
+    bm25_ranks = _ranks(bm25_scores)
+    rec_ranks = _ranks(recency_scores)
+
+    # RRF fusion
+    scored = []
+    for i, entry in enumerate(idx["vectors"]):
+        rrf = 0.0
+        rrf += 1.0 / (RRF_K + sem_ranks[i])
+        rrf += 1.0 / (RRF_K + bm25_ranks[i])
+        rrf += 1.0 / (RRF_K + rec_ranks[i])
+        # Normalize to 0-1 range for display consistency
+        max_possible = 3.0 / (RRF_K + 1)
+        scored.append((rrf / max_possible, entry))
+
     scored.sort(key=lambda x: -x[0])
     results = []
     for score, entry in scored[:top_k]:

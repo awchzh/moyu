@@ -1,36 +1,80 @@
 #!/usr/bin/env python3
 """
-context_manager.py — MOYU Context-Aware Compression (V2.0)
+context_manager.py — MOYU Context-Aware Compression (V2.1)
 
-Auto-detects context occupancy and compresses injection payload before
-it reaches the model. Think of it as a priority checkpoint — decides
-what goes into the precious context window and what waits outside.
+Two-tier graduated compression:
+  Mild (70%+)  — truncate long memories, defer low-priority items
+  Auto (85%+)  — aggressive: demote non-critical, aggressive truncate
 
-Strategy layers (in order of aggression):
-  1. TRUNCATE — shorten long summaries, keep the punchline
-  2. DEMOTE — low-importance items become "available on request"
-  3. MERGE  — group similar items into one composite note
-  4. DEFER  — dropped entirely from this cycle (saved for next)
+Config (config.yaml → compression):
+  enabled: true
+  budget_chars: 2000
+  mild_threshold: 0.7   → start mild compression at 70%
+  auto_threshold: 0.85  → aggressive compression at 85%
 
 Usage:
     python3 context_manager.py stats      # Show compression history
+    python3 context_manager.py config     # Show current config
 """
 
 import json
 import os
-import time
 from datetime import datetime
 from pathlib import Path
 
 STORAGE = Path(os.environ.get("MOYU_STORAGE", str(Path(__file__).parent / "memory_data")))
+REFS_DIR = STORAGE / "refs"           # Truncated original content, for drill-down
 COMPRESS_LOG = STORAGE / "compression_log.json"
 
 # ── Defaults (overridable via config) ──
 
 DEFAULT_BUDGET = 2000       # Target injection budget in chars (~500 tokens)
-DEFAULT_WARN = 0.8          # Warning threshold (80%)
-DEFAULT_AUTO = 0.9          # Auto-compress threshold (90%)
+DEFAULT_WARN = 0.8          # Warning threshold (80%) — display only
+DEFAULT_MILD = 0.7          # Mild compression (70%) — truncate/defer
+DEFAULT_AUTO = 0.85         # Aggressive compression (85%) — demote/truncate hard
 MIN_BUDGET = 500            # Never compress below this
+
+ALLOWED_KEYS = {"mild_threshold", "auto_threshold", "budget_chars", "enabled"}
+
+
+# ── Refs (compression→traceability drill-down) ──
+
+
+def _save_ref(name: str, content: str):
+    """Save original content before truncation, so agent can drill down."""
+    safe_name = name.replace("/", "_").replace("\\", "_").replace(" ", "_")
+    path = REFS_DIR / f"{safe_name}.ref"
+    with open(path, "w") as f:
+        f.write(content)
+    return str(path)
+
+
+def _list_refs() -> list[str]:
+    """List available ref files."""
+    if not REFS_DIR.exists():
+        return []
+    return sorted(f.name for f in REFS_DIR.iterdir() if f.suffix == ".ref")
+
+
+def read_ref(name: str):
+    """Read a ref file by name (with or without .ref suffix). Returns content or None."""
+    safe_name = name.replace("/", "_").replace("\\", "_").replace(" ", "_")
+    if not safe_name.endswith(".ref"):
+        safe_name += ".ref"
+    path = REFS_DIR / safe_name
+    if path.exists():
+        return path.read_text()
+    return None
+
+
+def delete_ref(name: str):
+    """Delete a ref file."""
+    safe_name = name.replace("/", "_").replace("\\", "_").replace(" ", "_")
+    if not safe_name.endswith(".ref"):
+        safe_name += ".ref"
+    path = REFS_DIR / safe_name
+    if path.exists():
+        path.unlink()
 
 
 def _load_compress_log() -> dict:
@@ -51,9 +95,30 @@ def _load_compress_log() -> dict:
 
 
 def _save_compress_log(log: dict):
+    REFS_DIR.mkdir(parents=True, exist_ok=True)
     COMPRESS_LOG.parent.mkdir(parents=True, exist_ok=True)
     with open(COMPRESS_LOG, 'w') as f:
         json.dump(log, f, ensure_ascii=False, indent=2)
+
+
+def _load_compression_config() -> dict:
+    """Load compression settings from config.yaml, with defaults."""
+    cfg = {}
+    try:
+        import yaml
+        cfg_path = Path(__file__).parent / "config.yaml"
+        if cfg_path.exists():
+            with open(cfg_path) as f:
+                raw = yaml.safe_load(f) or {}
+            cfg = raw.get("compression", {})
+    except Exception:
+        pass
+    return {
+        "enabled": cfg.get("enabled", True),
+        "budget_chars": cfg.get("budget_chars", DEFAULT_BUDGET),
+        "mild_threshold": cfg.get("mild_threshold", DEFAULT_MILD),
+        "auto_threshold": cfg.get("auto_threshold", DEFAULT_AUTO),
+    }
 
 
 # ── Injection Payload ──
@@ -62,13 +127,15 @@ def _save_compress_log(log: dict):
 class InjectionPayload:
     """Represents everything about to be injected into context."""
 
-    def __init__(self, budget: int = DEFAULT_BUDGET, warn_at: float = DEFAULT_WARN, auto_at: float = DEFAULT_AUTO):
+    def __init__(self, budget: int = DEFAULT_BUDGET,
+                 mild_at: float = DEFAULT_MILD,
+                 auto_at: float = DEFAULT_AUTO):
         self.budget = budget
-        self.warn_at = warn_at
+        self.mild_at = mild_at
         self.auto_at = auto_at
-        self.auto_limit = int(budget * auto_at)      # auto-compress limit
-        self.warn_limit = int(budget * warn_at)       # warning limit
-        self.hard_limit = budget                       # hard limit
+        self.mild_limit = int(budget * mild_at)
+        self.auto_limit = int(budget * auto_at)
+        self.hard_limit = budget
         self.sections: list[dict] = []
 
     def add(self, name: str, content: str, priority: int = 5, category: str = "memory"):
@@ -78,7 +145,7 @@ class InjectionPayload:
         Category: working_memory, rule, memory, graph, profile
         """
         char_count = len(content)
-        token_est = char_count // 4  # rough: ~4 chars/token for Chinese, ~5 for English
+        token_est = char_count // 4
         self.sections.append({
             "name": name,
             "content": content,
@@ -94,39 +161,42 @@ class InjectionPayload:
     def total_tokens(self) -> int:
         return sum(s["tokens"] for s in self.sections)
 
-    def is_over_threshold(self) -> bool:
-        used_pct = self.total_chars() / self.budget if self.budget > 0 else 1
-        return used_pct >= self.threshold
-
     def usage_pct(self) -> float:
         return round(min(self.total_chars() / self.budget * 100, 100), 1)
 
     def level(self) -> str:
-        """Return current status level: 'ok', 'warn', 'auto', or 'over'."""
+        """Return current status level: 'ok', 'warn', 'mild', 'auto', or 'over'."""
         pct = self.total_chars() / self.budget if self.budget > 0 else 1
         if pct >= 1.0:
             return "over"
         if pct >= self.auto_at:
             return "auto"
-        if pct >= self.warn_at:
+        if pct >= self.mild_at:
+            return "mild"
+        if pct >= DEFAULT_WARN:
             return "warn"
         return "ok"
 
     def compress(self) -> list[dict]:
         """
-        Apply compression strategies until payload fits within limits.
+        Two-tier graduated compression.
+
+        Mild (≥ mild_threshold) — truncate long memories, defer priority >= 9
+        Auto (≥ auto_threshold) — demote non-critical, aggressive truncate
+
         Returns list of compression actions taken.
         """
         actions = []
         total = self.total_chars()
 
-        if total <= self.auto_limit:
-            return actions  # no compression needed
+        if total <= self.mild_limit:
+            return actions
 
-        # Strategy 1: Defer low-priority items (priority >= 8)
-        self.sections.sort(key=lambda s: s["priority"])  # high priority first
-        deferrable = [s for s in self.sections if s["priority"] >= 8]
-        kept = [s for s in self.sections if s["priority"] < 8]
+        # ── Mild compression ──
+        self.sections.sort(key=lambda s: s["priority"])
+
+        deferrable = [s for s in self.sections if s["priority"] >= 9]
+        kept = [s for s in self.sections if s["priority"] < 9]
 
         for d in deferrable:
             if sum(s["chars"] for s in kept) <= self.hard_limit:
@@ -137,25 +207,24 @@ class InjectionPayload:
                     "name": d["name"],
                     "saved_chars": d["chars"],
                     "saved_tokens": d["tokens"],
+                    "tier": "mild",
                 })
 
         self.sections = kept
         total = sum(s["chars"] for s in self.sections)
 
-        if total <= self.hard_limit:
-            return actions
-
-        # Strategy 2: Truncate memory summaries (category=memory, priority>=5)
         for s in self.sections:
             if s["category"] != "memory" or s["priority"] < 5:
                 continue
-            if total <= self.hard_limit:
+            if total <= self.mild_limit:
                 break
+            original_text = s["content"]
             original = s["chars"]
-            # Truncate to 60% of original, max 200 chars
             max_len = min(int(original * 0.6), 200)
-            if len(s["content"]) > max_len:
-                s["content"] = s["content"][:max_len] + "..."
+            if len(original_text) > max_len:
+                # Save ref before truncating
+                ref_path = _save_ref(s["name"], original_text)
+                s["content"] = original_text[:max_len] + f"… [↩ ref:{s['name']}]"
                 saved = original - len(s["content"])
                 total -= saved
                 actions.append({
@@ -163,6 +232,53 @@ class InjectionPayload:
                     "name": s["name"],
                     "saved_chars": saved,
                     "saved_tokens": saved // 4,
+                    "tier": "mild",
+                    "ref": ref_path,
+                })
+
+        if total <= self.auto_limit:
+            return actions
+
+        # ── Aggressive compression ──
+        deferrable2 = [s for s in self.sections if s["priority"] >= 7]
+        kept2 = [s for s in self.sections if s["priority"] < 7]
+
+        for d in deferrable2:
+            if sum(s["chars"] for s in kept2) <= self.hard_limit:
+                kept2.append(d)
+            else:
+                actions.append({
+                    "action": "demoted",
+                    "name": d["name"],
+                    "saved_chars": d["chars"],
+                    "saved_tokens": d["tokens"],
+                    "tier": "auto",
+                })
+
+        self.sections = kept2
+        total = sum(s["chars"] for s in self.sections)
+
+        for s in self.sections:
+            if s["category"] != "memory":
+                continue
+            if total <= self.hard_limit:
+                break
+            original_text = s["content"]
+            original = s["chars"]
+            max_len = min(int(original * 0.3), 100)
+            if len(original_text) > max_len:
+                # Save ref before truncating (if not already saved by mild tier)
+                ref_path = _save_ref(s["name"], original_text)
+                s["content"] = original_text[:max_len] + f"… [↩ ref:{s['name']}]"
+                saved = original - len(s["content"])
+                total -= saved
+                actions.append({
+                    "action": "truncated_aggressive",
+                    "name": s["name"],
+                    "saved_chars": saved,
+                    "saved_tokens": saved // 4,
+                    "tier": "auto",
+                    "ref": ref_path,
                 })
 
         return actions
@@ -174,7 +290,7 @@ class InjectionPayload:
 def prepare_injection(
     sections: list[tuple[str, str, int, str]],
     budget: int = DEFAULT_BUDGET,
-    warn_at: float = DEFAULT_WARN,
+    mild_at: float = DEFAULT_MILD,
     auto_at: float = DEFAULT_AUTO,
 ) -> tuple[str, dict]:
     """
@@ -183,21 +299,19 @@ def prepare_injection(
     Each section: (name, content, priority, category)
     Returns: (compressed_string, compression_report)
     """
-    payload = InjectionPayload(budget=budget, warn_at=warn_at, auto_at=auto_at)
+    payload = InjectionPayload(budget=budget, mild_at=mild_at, auto_at=auto_at)
 
     for name, content, priority, category in sections:
         payload.add(name, content, priority, category)
 
     actions = payload.compress()
 
-    # Build output
     output_parts = []
     for s in payload.sections:
         output_parts.append(s["content"])
 
     result = "\n\n".join(p for p in output_parts if p.strip())
 
-    # Log
     log = _load_compress_log()
     saved_chars = sum(a.get("saved_chars", 0) for a in actions)
     saved_tokens = sum(a.get("saved_tokens", 0) for a in actions)
@@ -228,53 +342,107 @@ def prepare_injection(
     return result, report
 
 
+def show_config():
+    """Print current compression config."""
+    cfg = _load_compression_config()
+    print()
+    print("  Compression Config")
+    print("=" * 35)
+    print(f"  {'enabled':25s}  {cfg['enabled']}")
+    print(f"  {'budget_chars':25s}  {cfg['budget_chars']}")
+    print(f"  {'mild_threshold':25s}  {cfg['mild_threshold']}  (70% = start mild)")
+    print(f"  {'auto_threshold':25s}  {cfg['auto_threshold']}  (85% = aggressive)")
+    print()
+
+
+def set_config(key: str, value: str):
+    """Set a compression parameter in config.yaml."""
+    if key not in ALLOWED_KEYS:
+        print(f"Unknown key: {key}")
+        print(f"Allowed: {', '.join(sorted(ALLOWED_KEYS))}")
+        return
+    try:
+        import yaml
+    except ImportError:
+        print("PyYAML not available. Edit config.yaml manually.")
+        return
+
+    cfg_path = Path(__file__).parent / "config.yaml"
+    if not cfg_path.exists():
+        print("config.yaml not found")
+        return
+
+    with open(cfg_path) as f:
+        cfg = yaml.safe_load(f) or {}
+
+    try:
+        if key == "enabled":
+            val = value.lower() in ("true", "yes", "1", "on")
+        elif key == "budget_chars":
+            val = int(value)
+            if val < MIN_BUDGET:
+                raise ValueError(f"Minimum budget is {MIN_BUDGET}")
+        else:
+            val = float(value)
+            if not (0.1 <= val <= 1.0):
+                raise ValueError("Must be between 0.1 and 1.0")
+    except (ValueError, TypeError) as e:
+        print(f"Invalid value for {key}: '{value}'. {e}")
+        return
+
+    if "compression" not in cfg:
+        cfg["compression"] = {}
+    cfg["compression"][key] = val
+
+    with open(cfg_path, "w") as f:
+        yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+
+    print(f"✅ Set compression.{key} = {val}")
+    show_config()
+
+
 def stats():
     """Show compression statistics and current status."""
     log = _load_compress_log()
+    cfg = _load_compression_config()
     events = log.get("compression_events", 0)
     saved_chars = log.get("total_saved_chars", 0)
     saved_tokens = log.get("total_saved_tokens", 0)
     last = log.get("last_event")
 
-    # Show current status
-    payload = InjectionPayload()
+    payload = InjectionPayload(budget=cfg["budget_chars"],
+                                mild_at=cfg["mild_threshold"],
+                                auto_at=cfg["auto_threshold"])
     status = payload.level()
     pct = payload.usage_pct()
 
-    status_icons = {"ok": "✅", "warn": "⚠️", "auto": "⚡", "over": "🔴"}
+    status_icons = {"ok": "✅", "warn": "⚠️", "mild": "🌤️", "auto": "⚡", "over": "🔴"}
     icon = status_icons.get(status, "❓")
-    status_label = {
-        "ok": f"Safe ({pct}% — below {int(DEFAULT_WARN*100)}% warning line)",
-        "warn": f"Warning ({pct}%) — consider compression (moyu compress --now)",
-        "auto": f"Auto-compressing ({pct}% — above {int(DEFAULT_AUTO*100)}% threshold)",
-        "over": f"OVER BUDGET ({pct}%) — compression active",
-    }
+    mild_pct = int(cfg["mild_threshold"] * 100)
+    auto_pct = int(cfg["auto_threshold"] * 100)
 
     print(f"\n📦 MOYU Context Compression")
     print("=" * 50)
-    print(f"  {icon} {status_label.get(status, 'Unknown')}")
-    print(f"  Warning: {int(DEFAULT_WARN*100)}%  | Auto: {int(DEFAULT_AUTO*100)}%  | Budget: {DEFAULT_BUDGET//4} tokens")
-    print(f"  Session started:    {log.get('session_start', '?')[:19]}")
+    print(f"  {icon}  Used: {pct}%  |  Mild: {mild_pct}%  |  Auto: {auto_pct}%")
+    print(f"  Budget: {cfg['budget_chars']} chars (~{cfg['budget_chars']//4} tokens)")
     print(f"  Compression events: {events}")
     print(f"  Total saved:        {saved_chars} chars (~{saved_tokens} tokens)")
     if last:
         print(f"  Last event:         {last.get('timestamp', '?')[:19]}")
         print(f"    Before: {last['before_chars']} chars → After: {last['after_chars']} chars")
         for a in last.get("actions", []):
-            print(f"    • {a['action']}: {a['name']} (saved {a['saved_chars']} chars)")
+            print(f"    • [{a.get('tier','?')}] {a['action']}: {a['name']} (saved {a['saved_chars']} chars)")
     print()
     return status
 
+
 def last_report_message() -> str:
-    """Return a short, direct message about the last compression event.
-    Call this after compression to let the user know what happened.
-    Returns empty string if no new compression to report."""
+    """Return a short, direct message about the last compression event."""
     log = _load_compress_log()
     last = log.get("last_event")
     if not last:
         return ""
 
-    # Only show message once per compression event
     shown = log.get("last_reported", "")
     if shown == last.get("timestamp", ""):
         return ""
@@ -295,49 +463,33 @@ def last_report_message() -> str:
 
 
 def status_line() -> str:
-    """Return a single-line context status, matching the style of Hermes Web UI.
-    
-    Example output:
-        📊 Context window: 37% used (63% left) — Auto-compress at 80%
-    
-    Put this in your AI's system prompt to auto-show on every reply:
-    'At the end of each response, if context is above 80%, append a status line.'
-    """
-    payload = InjectionPayload()
+    """Return a single-line context status."""
+    cfg = _load_compression_config()
+    payload = InjectionPayload(budget=cfg["budget_chars"],
+                                mild_at=cfg["mild_threshold"],
+                                auto_at=cfg["auto_threshold"])
     pct = payload.usage_pct()
     level = payload.level()
     if pct == 0:
         return ""
-    warn_at = int(DEFAULT_WARN * 100)
-    auto_at = int(DEFAULT_AUTO * 100)
     left = 100 - int(pct)
-    return f"📊 Context window: {pct:.0f}% used ({left}% left) — Auto-compress at {auto_at}%"
-
-
-def warning_message() -> str:
-    """Return a warning message if usage is above the warning threshold.
-    Returns empty string if under threshold."""
-    payload = InjectionPayload()
-    pct = payload.usage_pct()
-    level = payload.level()
-    if level == "warn":
-        return f"上下文用到 {pct}% 了，快到预警线（{int(DEFAULT_WARN*100)}%）"
-    if level in ("auto", "over"):
-        return f"上下文 {pct}%，超过自动压缩线（{int(DEFAULT_AUTO*100)}%），正在压缩"
-    return ""
+    mild_pct = int(cfg["mild_threshold"] * 100)
+    auto_pct = int(cfg["auto_threshold"] * 100)
+    return f"📊 Context: {pct:.0f}% ({left}% left) — mild {mild_pct}% / auto {auto_pct}%"
 
 
 def check_status() -> dict:
     """Quick health check — returns current compression status."""
-    payload = InjectionPayload()
+    cfg = _load_compression_config()
+    payload = InjectionPayload(budget=cfg["budget_chars"],
+                                mild_at=cfg["mild_threshold"],
+                                auto_at=cfg["auto_threshold"])
     return {
         "level": payload.level(),
         "usage_pct": payload.usage_pct(),
-        "warn_at": DEFAULT_WARN,
-        "auto_at": DEFAULT_AUTO,
-        "budget": DEFAULT_BUDGET,
-        "warn_limit": payload.warn_limit,
-        "auto_limit": payload.auto_limit,
+        "mild_threshold": cfg["mild_threshold"],
+        "auto_threshold": cfg["auto_threshold"],
+        "budget": cfg["budget_chars"],
     }
 
 
@@ -348,38 +500,13 @@ def build_injection(
     knowledge_graph: str = "",
     user_profile: str = "",
 ) -> tuple[str, dict]:
-    """
-    Build a compressed injection payload from all available context sources.
-    Auto-detects config.yaml settings.
+    """Build a compressed injection payload from all available context sources."""
+    cfg = _load_compression_config()
 
-    Returns: (compressed_string, compression_report)
-    """
-    # Load compression settings from config
-    budget = DEFAULT_BUDGET
-    warn_at = DEFAULT_WARN
-    auto_at = DEFAULT_AUTO
-    enabled = True
-
-    try:
-        import yaml
-        cfg_path = Path(__file__).parent / "config.yaml"
-        if cfg_path.exists():
-            with open(cfg_path) as f:
-                cfg = yaml.safe_load(f) or {}
-            comp = cfg.get("compression", {})
-            enabled = comp.get("enabled", True)
-            budget = comp.get("budget_chars", DEFAULT_BUDGET)
-            warn_at = comp.get("warning_threshold", DEFAULT_WARN)
-            auto_at = comp.get("auto_threshold", DEFAULT_AUTO)
-    except Exception:
-        pass
-
-    if not enabled:
-        # Compression disabled — just concatenate everything
+    if not cfg["enabled"]:
         parts = [p for p in [working_memory, behavioral_rules, memory_search, knowledge_graph, user_profile] if p.strip()]
         return "\n\n".join(parts), {"compressed": False, "reason": "disabled in config"}
 
-    # Build sections for the compression engine
     sections = []
 
     if working_memory.strip():
@@ -393,37 +520,38 @@ def build_injection(
     if memory_search.strip():
         sections.append(("memory_search", memory_search.strip(), 5, "memory"))
 
-    return prepare_injection(sections, budget=budget, warn_at=warn_at, auto_at=auto_at)
+    return prepare_injection(sections,
+                             budget=cfg["budget_chars"],
+                             mild_at=cfg["mild_threshold"],
+                             auto_at=cfg["auto_threshold"])
 
 
 def demo() -> dict:
     """Return demo content for moyu_demo.py discovery engine."""
     return {
         "capability": 12,
-        "title": "Context-Aware Compression",
+        "title": "Context-Aware Compression (V2.1 — Two-Tier)",
         "output": """\
-📦 V2.0 FEATURE — Context-Aware Compression
-────────────────────────────────────
-  Before compression (89% of budget):
-    ✅ Working Memory (task + contexts)   280 chars
-    ✅ Behavioral Rules (3 promoted)      340 chars
-    ⚠️  Memory Search (5 results)        1200 chars  ← largest
-    ⚠️  Knowledge Graph (8 entities)      480 chars
+📦 V2.1 FEATURE — Two-Tier Context Compression
+────────────────────────────────────────────
+  Mild (70%+): truncate long memories, defer optional items
+  Auto (85%+): aggressive demote non-critical, hard truncate
+  Budget: 2000 chars (~500 tokens)
 
-  After compression:
-    ✅ Working Memory                    280 chars  — critical, kept
-    ✅ Behavioral Rules                  340 chars  — critical, kept
-    ⚠️  Memory Search → 3 results        720 chars  — truncated
-    ⚠️  Knowledge Graph → 5 entities     280 chars  — deferred low-conn
-
-  📊 Saved: 520 chars (~130 tokens) | Usage: 89% → 62%
+  Usage: 89% → after compression: 68%
+  Saved: 520 chars (~130 tokens)
 """,
     }
 
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "stats":
+    args = sys.argv[1:]
+    if not args or args[0] == "stats":
         stats()
+    elif args[0] == "config":
+        show_config()
+    elif args[0] == "set" and len(args) >= 2:
+        set_config(args[1], args[2] if len(args) > 2 else "0")
     else:
         print(__doc__)

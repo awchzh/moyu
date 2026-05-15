@@ -16,10 +16,14 @@ Usage:
     moyu demo               Show all capabilities
     moyu compress           Show compression status
     moyu compress --now     Force manual compression
+    moyu compress config    Show compression parameters
+    moyu compress set <k> <v>  Set parameter (mild_threshold, auto_threshold, etc.)
     moyu forget             Show memory lifecycle (forgetting curve)
     moyu forget stats       Same as above
     moyu forget config      Show current forgetting curve parameters
     moyu forget set <k> <v> Set a parameter (demote_days, archive_days, etc.)
+    moyu ref <name>         Read original content of a compressed memory
+    moyu ref list           List available refs (compressed memory originals)
     moyu update             Check for updates
     moyu update now         Download & apply update
 """
@@ -220,6 +224,7 @@ CMD_TABLE = {
     "forget":     lambda args: _forget(args),
     "lifecycle":  lambda args: _forget(args),  # alias
     "bridge":     lambda args: _import("session_bridge").status(),
+    "ref":        lambda args: _ref_handler(args),
     "update":     lambda args: _update(args),
     "demo":       lambda args: cmd_demo(),
     "reflect":    lambda args: _call_func("self_reflection", "run", []),
@@ -264,12 +269,13 @@ def _handle_search(args):
     for r in results:
         print(f"  [{r['timestamp'][:10]}] {r['summary'][:80]}")
         print(f"  Score: {r.get('score', 0)}")
-        print()
-
 
 def _compress(args):
+    """Handle compress command — status, config, and settings."""
     cm = _import("context_manager")
-    if "--now" in args:
+    if not args or args[0] in ("stats", "--stats"):
+        cm.stats()
+    elif args[0] == "--now":
         ctx = _import("active_context")
         lrn = _import("learner")
         wm = ctx.format_for_injection()
@@ -279,8 +285,28 @@ def _compress(args):
         print(f"🚚 Manual compression triggered")
         print(f"  {msg}" if msg else f"  No compression needed ({report['usage_pct']}% of budget)")
         print()
+    elif args[0] in ("config", "show", "--config"):
+        cm.show_config()
+    elif args[0] == "set" and len(args) >= 3:
+        cm.set_config(args[1], args[2])
+    elif args[0] in ("help", "--help"):
+        _compress_help()
     else:
-        cm.stats()
+        print(f"Unknown subcommand: {args[0]}")
+        _compress_help()
+
+
+def _compress_help():
+    print("moyu compress commands:")
+    print("  moyu compress                  Show compression status")
+    print("  moyu compress stats            Same as above")
+    print("  moyu compress --now            Force manual compression")
+    print("  moyu compress config           Show current compression parameters")
+    print("  moyu compress set <key> <val>  Set a parameter:")
+    print("    mild_threshold    — Mild compression trigger (0.7 = 70%)")
+    print("    auto_threshold    — Aggressive compression trigger (0.85 = 85%)")
+    print("    budget_chars      — Target injection budget in chars")
+    print("    enabled           — true/false")
 
 
 def _forget(args):
@@ -435,6 +461,26 @@ def _kb_handler(args):
     else:
         print(f"Unknown kb subcommand: {subcmd}")
         print("Usage: moyu kb {index|search|list|read}")
+
+
+def _ref_handler(args):
+    """Handle ref command — list and read compressed refs."""
+    cm = _import("context_manager")
+    if not args or args[0] in ("list", "ls"):
+        refs = cm._list_refs()
+        if refs:
+            print(f"\n  Available refs ({len(refs)}):")
+            for r in refs:
+                print(f"    \u2022 {r}")
+            print()
+        else:
+            print("No refs.")
+    else:
+        content = cm.read_ref(args[0])
+        if content:
+            print(content)
+        else:
+            print(f"Ref not found: {args[0]}")
 
 
 def show_help():

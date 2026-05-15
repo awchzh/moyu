@@ -1,28 +1,122 @@
 #!/usr/bin/env python3
 """
-forgetting_curve.py — MOYU Memory Lifecycle (V2.0.5)
+forgetting_curve.py — MOYU Memory Lifecycle (V2.1)
 
-Two-stage gating:
+Three-stage gating:
   Stage 1 — 14-day safety window (no demotion before this threshold)
   Stage 2 — Access density trend analysis: widening intervals → demote,
             stable intervals → keep (even if past the 14-day mark)
+  Stage 3 — Scene association protection: if any memory in the same scene
+            has been recently accessed, protect this one too.
 
+Scenes are auto-assigned by keyword matching on memory summaries.
 Config (config.yaml → forgetting_curve):
   enabled: true
   demote_days: 14    → Stage 1: safety window
   archive_days: 60   → Demoted + 60 more days → archivable
   density_window: 20 → Max access timestamps to track per memory
+  scene_protection_days: 7  → Stage 3: a scene stays hot this long after last access
 """
 
 import json
 import os
+import re
 import statistics
 from datetime import datetime, timedelta
 from pathlib import Path
 
 STORAGE = Path(os.environ.get("MOYU_STORAGE", str(Path(__file__).parent / "memory_data")))
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# ── Dynamic scene extraction (from memory summaries) ──
+# Scenes are extracted from high-frequency keywords that appear across
+# multiple memories. No hard-coded labels — scenes grow from your data.
+
+_STOP_WORDS = {
+    "的", "了", "是", "在", "和", "我", "们", "你", "有", "不", "就",
+    "这", "那", "也", "都", "要", "一", "个", "会", "很", "到", "以",
+    "能", "他", "她", "它", "来", "去", "让", "把", "被", "对", "为",
+    "与", "从", "上", "下", "中", "里", "说", "做", "用", "给", "看",
+    "没", "还", "但", "可", "所", "比", "或", "其", "而", "且", "之",
+    "如", "于", "及", "更", "最", "先", "后", "已", "将", "又", "再",
+    "些", "吗", "吧", "呢", "哦", "呀", "嘛", "嗯", "哈", "哈", "哇",
+    "则", "每", "各", "被", "被", "无", "非", "当", "等", "并", "只",
+    "这个", "那个", "没有", "不是", "还是", "因为", "所以", "但是",
+    "如果", "虽然", "可能", "可以", "应该", "需要", "已经", "进行",
+    "使用", "通过", "作为", "由于", "关于", "一个", "什么", "怎么",
+    "自己", "知道", "觉得", "看到", "完成", "开始", "继续", "最后",
+    "the", "a", "an", "and", "or", "in", "on", "at", "to", "of",
+    "for", "with", "is", "are", "was", "were", "be", "been", "have",
+    "has", "had", "do", "does", "did", "will", "would", "can", "could",
+    "should", "may", "might", "shall", "this", "that", "these", "those",
+    "it", "its", "we", "our", "you", "your", "they", "them", "their",
+    "he", "him", "his", "she", "her", "not", "no", "but", "if", "all",
+    "just", "very", "too", "so", "also", "now", "then", "here", "there",
+    "about", "into", "over", "after", "before", "between", "through",
+}
+_MIN_SCENE_COUNT = 2  # A keyword must appear in at least this many memories to become a scene
+
+
+def _tokenize(text: str) -> list:
+    """Split text into tokens: Chinese multi-char words + English words (len >= 2)."""
+    chinese = re.findall(r'[\u4e00-\u9fff]{2,}', text)
+    english = re.findall(r'[a-zA-Z][a-zA-Z0-9]{1,}', text)
+    return [t.lower() for t in chinese + english if t.lower() not in _STOP_WORDS and len(t) >= 2]
+
+
+def _extract_scene_keywords(memories: list) -> list:
+    """Extract high-frequency keywords from memory summaries to use as scene labels.
+    Only words appearing in >= _MIN_SCENE_COUNT memories become scenes.
+    Sorted by frequency descending."""
+    counter = {}
+    for m in memories:
+        if m.get("demoted"):
+            continue
+        tokens = set(_tokenize(m.get("summary", "")))
+        for t in tokens:
+            counter[t] = counter.get(t, 0) + 1
+    scenes = [w for w, c in counter.items() if c >= _MIN_SCENE_COUNT]
+    scenes.sort(key=lambda w: -counter[w])
+    return scenes
+
+
+def _assign_scene(summary: str, scene_keywords: list) -> str:
+    """Match a summary against scene keywords. Returns first match or 'general'."""
+    if not summary or not scene_keywords:
+        return "general"
+    low = summary.lower()
+    for kw in scene_keywords:
+        if kw.lower() in low:
+            return kw
+    return "general"
+
+
+def _ensure_scene(memories: list):
+    """Assign scenes to memories using dynamic keyword extraction.
+    Uses checkpoint for incremental processing — only new/changed memories."""
+    changed = False
+    scene_keywords = _extract_scene_keywords(memories)
+    cp = _load_checkpoint()
+    last_ts = cp.get("last_processed", "")
+    processed = 0
+
+    for m in memories:
+        if "scene" not in m:
+            m["scene"] = _assign_scene(m.get("summary", ""), scene_keywords)
+            changed = True
+            processed += 1
+        elif m.get("timestamp", "") > last_ts:
+            new_scene = _assign_scene(m.get("summary", ""), scene_keywords)
+            if m.get("scene") != new_scene:
+                m["scene"] = new_scene
+                changed = True
+                processed += 1
+
+    if processed > 0:
+        cp["last_processed"] = _now()
+        cp["total_processed"] = cp.get("total_processed", 0) + processed
+        _save_checkpoint(cp)
+    return changed
+
 
 def _memories_path() -> str:
     return str(STORAGE / "conversation_memory.json")
@@ -81,11 +175,57 @@ def _days_between(ts_a: str, ts_b: str) -> float:
         return 0
 
 
-# ── Two-stage gating ─────────────────────────────────────────────────────────
+# ── Checkpoint (incremental processing) ──
+
+CHECKPOINT_PATH = STORAGE / "scene_checkpoint.json"
+
+
+def _load_checkpoint() -> dict:
+    """Load incremental processing checkpoint."""
+    if CHECKPOINT_PATH.exists():
+        try:
+            with open(CHECKPOINT_PATH) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"last_processed": _now(), "total_processed": 0}
+
+
+def _save_checkpoint(cp: dict):
+    CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(CHECKPOINT_PATH, "w") as f:
+        json.dump(cp, f, ensure_ascii=False, indent=2)
+
+
+def _build_scene_index(memories: list) -> dict:
+    """Build a dict: scene_name → [memory ids] for all non-demoted memories."""
+    index = {}
+    for m in memories:
+        if m.get("demoted", False):
+            continue
+        scene = m.get("scene", "general")
+        m_id = m.get("id", "?")
+        if scene not in index:
+            index[scene] = []
+        index[scene].append(m_id)
+    return index
+
+
+def _hot_scenes(memories: list, hot_days: float = 7) -> set:
+    """Determine which scenes are 'hot' — any memory in them was accessed within hot_days."""
+    hot = set()
+    for m in memories:
+        ts = m.get("last_accessed") or m.get("timestamp", _now())
+        if _days_since(ts) <= hot_days:
+            scene = m.get("scene", "general")
+            hot.add(scene)
+    return hot
+
+
+# ── Two-stage gating + scene protection ──
 
 def _access_density_trend(timestamps: list) -> dict:
-    """
-    Stage 2: analyze access interval pattern from timestamp history.
+    """Stage 2: analyze access interval pattern from timestamp history.
 
     Returns a dict with:
       trend: 'stable' | 'widening' | 'insufficient'
@@ -141,6 +281,9 @@ def track_access(memory_ids: list):
     density_window = cfg.get("density_window", 20)
 
     memories = _load_memories()
+    # Ensure all memories have scenes before tracking
+    _ensure_scene(memories)
+
     now = _now()
     changed = False
     for m in memories:
@@ -166,11 +309,13 @@ def track_access(memory_ids: list):
 
 def run(context_pressure: bool = False) -> dict:
     """
-    Run the forgetting curve check on all memories (two-stage gating).
+    Run the forgetting curve check on all memories (three-stage gating).
 
     Stage 1 — Safety window: memories within demote_days are never demoted.
     Stage 2 — Density trend: memories past the window with stable access
               patterns are kept active; widening intervals are demoted.
+    Stage 3 — Scene protection: if the memory's scene is "hot" (any memory
+              in the same scene was recently accessed), protect this one too.
 
     Args:
         context_pressure: If True, activate demotion. If False, only
@@ -184,22 +329,31 @@ def run(context_pressure: bool = False) -> dict:
 
     demote_days = cfg.get("demote_days", 14)
     archive_days = cfg.get("archive_days", 60)
+    scene_protection_days = cfg.get("scene_protection_days", 7)
 
     memories = _load_memories()
+    # Ensure scenes are assigned
+    changed_scenes = _ensure_scene(memories)
+
     active_memories = [m for m in memories if not m.get("demoted", False)]
 
     # ── Stage 0: skip demotion if no context pressure and few memories ──
     active_count = len(active_memories)
 
     if not context_pressure and active_count <= 15:
-        kept_count = len([m for m in memories if m.get("demoted_by_density")])
+        kept_by_scene = len([m for m in active_memories if m.get("protected_by_scene")])
+        kept_by_density = len([m for m in memories if m.get("demoted_by_density")])
+        if changed_scenes:
+            _save_memories(memories)
         return {
             "status": "ok",
             "total_memories": len(memories),
             "demoted": [],
             "already_demoted": len([m for m in memories if m.get("demoted", False)]),
-            "kept_by_density": kept_count,
+            "kept_by_density": kept_by_density,
             "kept_by_density_ids": [],
+            "kept_by_scene": kept_by_scene,
+            "kept_by_scene_ids": [],
             "archivable": [],
             "demote_threshold_days": demote_days,
             "archive_threshold_days": archive_days,
@@ -207,8 +361,14 @@ def run(context_pressure: bool = False) -> dict:
         }
 
     now = _now()
+
+    # ── Stage 3 pre-check: determine hot scenes ──
+    hot = _hot_scenes(memories, hot_days=scene_protection_days)
+    scene_index = _build_scene_index(memories)
+
     demoted = []
     kept_by_density = []
+    kept_by_scene = []
     archived = []
     re_demoted = []
 
@@ -217,6 +377,7 @@ def run(context_pressure: bool = False) -> dict:
         is_demoted = m.get("demoted", False)
         access_ts = m.get("last_accessed") or m.get("timestamp", now)
         days = _days_since(access_ts)
+        scene = m.get("scene", "general")
 
         if is_demoted:
             if days >= archive_days:
@@ -229,6 +390,15 @@ def run(context_pressure: bool = False) -> dict:
         if days < demote_days:
             continue
 
+        # ── Stage 3: scene protection check (before density) ──
+        if scene in hot and scene in scene_index:
+            # Another memory in this scene has been recently accessed
+            # Extend protection for this memory
+            m["protected_by_scene"] = True
+            m["last_checked"] = now
+            kept_by_scene.append(m_id)
+            continue
+
         # ── Stage 2: check access density trend ──
         trend = _access_density_trend(m.get("access_timestamps", []))
 
@@ -238,7 +408,7 @@ def run(context_pressure: bool = False) -> dict:
             kept_by_density.append(m_id)
             continue
 
-        # Passed both gates → demote
+        # Passed all gates → demote
         m["demoted"] = True
         m["demoted_reason"] = f"not accessed in {days:.0f} days"
         m["demoted_at"] = now
@@ -251,7 +421,7 @@ def run(context_pressure: bool = False) -> dict:
 
         demoted.append(m_id)
 
-    if demoted or archived or kept_by_density:
+    if demoted or archived or kept_by_density or kept_by_scene or changed_scenes:
         _save_memories(memories)
 
     return {
@@ -261,6 +431,8 @@ def run(context_pressure: bool = False) -> dict:
         "already_demoted": len(re_demoted),
         "kept_by_density": len(kept_by_density),
         "kept_by_density_ids": kept_by_density,
+        "kept_by_scene": len(kept_by_scene),
+        "kept_by_scene_ids": kept_by_scene,
         "archivable": archived,
         "demote_threshold_days": demote_days,
         "archive_threshold_days": archive_days,
@@ -277,6 +449,9 @@ def summary() -> str:
     kb = r.get("kept_by_density", 0)
     if kb:
         parts.append(f"密度分析保留 {kb} 条")
+    ks = r.get("kept_by_scene", 0)
+    if ks:
+        parts.append(f"场景保护保留 {ks} 条")
     if r.get("archivable"):
         parts.append(f"可归档 {len(r['archivable'])} 条")
     active = r.get("total_memories", 0) - len(r.get("demoted", []))
@@ -287,11 +462,12 @@ def summary() -> str:
 def stats():
     """Terminal stats output."""
     r = run()
-    print(f"\n🧠 MOYU Memory Lifecycle (two-stage gating)")
+    print(f"\n🧠 MOYU Memory Lifecycle (three-stage gating)")
     print("=" * 55)
     print(f"  Total memories:         {r.get('total_memories', 0)}")
     print(f"  Stage 1 window:         {r.get('demote_threshold_days', '?')}d")
     print(f"  Stage 2 kept by density:{r.get('kept_by_density', 0)}")
+    print(f"  Stage 3 kept by scene:  {r.get('kept_by_scene', 0)}")
     print(f"  Archive threshold:      {r.get('archive_threshold_days', '?')}d")
     print(f"  Freshly demoted:        {len(r.get('demoted', []))}")
     print(f"  Already demoted:        {r.get('already_demoted', 0)}")
@@ -300,27 +476,33 @@ def stats():
         print(f"  Demoted IDs:            {', '.join(r['demoted'][:5])}")
     if r.get("kept_by_density_ids"):
         print(f"  Density-kept IDs:       {', '.join(r['kept_by_density_ids'][:5])}")
+    if r.get("kept_by_scene_ids"):
+        print(f"  Scene-kept IDs:         {', '.join(r['kept_by_scene_ids'][:5])}")
     print()
 
 
 def demo() -> dict:
     return {
         "capability": 13,
-        "title": "Forgetting Curve (V2.0.5 — Two-Stage Gating)",
+        "title": "Forgetting Curve (V2.1 — Three-Stage Gating + Scene Protection)",
         "output": """\
-🧠 V2.0.5 FEATURE — Two-Stage Forgetting Curve
-─────────────────────────────────────────────
-  Stage 1 — 14d safety window (no memory demoted before this)
-  Stage 2 — Access density trend analysis
-    • Stable intervals (every 10-14d) → kept active
-    • Widening intervals (1h→3d→14d) → demoted
-    • Insufficient data → default demote
+🧠 V2.1 FEATURE — Forgetting Curve with Scene Protection
+──────────────────────────────────────────────────────
+  3 stages:
+    1. 14d safety window — no memory demoted before this
+    2. Access density — stable intervals → keep, widening → demote
+    3. Scene protection — hot scene → all scene memories protected
 
-  [demo_01] Smart frame kickoff   → ✅ 2d  → active
-  [demo_06] 张艺 hates WeChat     → ✅ 4d  → active (accessed every 12d)
+  Scenes auto-assigned by keyword: project, memory, security, self, work
+
+  [demo_01] Smart frame kickoff   → ✅ 2d  → active (scene: project)
+  [demo_06] 张艺 hates WeChat     → ✅ 4d  → active (scene: general)
   [demo_10] 用户偏好记录          → ⏳ 18d → kept by density (stable intervals)
   [demo_05] 李总 deadline         → ⏳ 32d → demoted (widening intervals)
   [demo_02] 方案讨论               → ⏳ 45d → archivable (demoted + 60d)
+
+  Scene index: project(4), memory(2), security(1), general(2)
+  Hot scenes: project (memory demo_01 accessed 2d ago)
 """,
     }
 

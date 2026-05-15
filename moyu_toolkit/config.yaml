@@ -5,15 +5,16 @@ api:
   embedding_model: text-embedding-3-small
   provider: openai
 compression:
-  auto_threshold: 0.9
+  auto_threshold: 0.85
   budget_chars: 2000
   enabled: true
-  warning_threshold: 0.8
+  mild_threshold: 0.7
 forgetting_curve:
   archive_days: 60
   demote_days: 14
   density_window: 20
   enabled: true
+  scene_protection_days: 7
 learner:
   correction_signals:
   - 不是
