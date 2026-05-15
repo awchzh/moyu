@@ -216,22 +216,30 @@ def learn(text: str) -> bool:
 
 
 def _extract_lesson(text: str) -> str:
-    reply = _call_llm(f"The user corrected the AI. Extract one lesson: {text[:500]}")
+    """Extract a concise lesson from a user correction.
+    First tries LLM (if API key configured), then regex fallback."""
+    reply = _call_llm(f"Extract the core lesson in one short sentence (Chinese): {text[:500]}")
     if reply and reply != "无":
         return reply[:100]
     patterns = [
-        r"不要(.+?)[。，]?", r"别(.+?)[。，]?", r"应该(.+?)[。，]?",
-        r"记住(.+?)[。，]?", r"正确的做法是(.+?)[。，]?",
-        r"[！!](.+?)(?:[。，.!?]|$)",  # General: content after exclamation mark
+        r"(?:不要|不准|别|别再)\s*(.+?)(?:[。，！？,.!?]|$)",
+        r"应该\s*(.+?)[。，！？,.!?]",
+        r"记住\s*(.+?)[。，！？,.!?]",
+        r"正确的做法是\s*(.+?)[。，！？,.!?]",
+        r"不是\s*(.+?)[。，！？,.!?]",
+        r"不对\s*(.+?)[。，！？,.!?]",
+        r"错了[，。！]?\s*(.+?)[。，！？,.!?]",
         # English patterns
-        r"don't (.+?)[.,!?]", r"never (.+?)[.,!?]",
-        r"stop (.+?)[.,!?]", r"(?:remember|correct|right) (.+?)[.,!?]",
+        r"(?:don't|do not|never|stop)\s+(.+?)[.,!?]",
+        r"(?:remember|correct):?\s+(.+?)[.,!?]",
     ]
     for p in patterns:
-        m = re.search(p, text)
+        m = re.search(p, text, re.IGNORECASE)
         if m and m.group(1):
-            return f"User correction: {m.group(1)[:60].strip()}"
-    return ""
+            lesson = m.group(1).strip()
+            return f"User: {lesson[:60]}"
+    # Fallback: return the whole text stripped
+    return text.strip()[:80]
 
 
 def _similar(a: str, b: str) -> bool:

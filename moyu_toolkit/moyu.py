@@ -322,6 +322,8 @@ def _forget(args):
         _forget_set(args[1], args[2])
     elif args[0] in ("help", "--help"):
         _forget_help()
+    elif args[0] in ("history", "digest"):
+        _forget_history(args[1:])
     else:
         print(f"Unknown subcommand: {args[0]}")
         _forget_help()
@@ -346,6 +348,81 @@ def _forget_help():
     print('        SceneName1: [keyword1, keyword2]')
     print('        SceneName2: [keyword3, keyword4, keyword5]')
     print("    A memory whose summary contains 'keyword1' → assigned to 'SceneName1'")
+    print("  moyu forget history [--today]  Show recent demotion/retention history")
+
+
+def _forget_history(args):
+    """Show what the forgetting curve has been doing — which memories
+    were demoted, which were kept, and why."""
+    import json as _json
+    import os as _os
+    from datetime import datetime as _dt
+    mem_path = _os.path.join(TOOLKIT_DIR, "memory_data", "conversation_memory.json")
+    if not _os.path.exists(mem_path):
+        print("No memory data found.")
+        return
+    with open(mem_path) as _f:
+        memories = _json.load(_f)
+
+    # Filter by today if --today flag
+    today_filter = "--today" in args
+    today_str = _dt.now().strftime("%Y-%m-%d")
+
+    demoted = [m for m in memories if m.get("demoted")]
+    demoted.sort(key=lambda m: m.get("demoted_at", m.get("timestamp", "")), reverse=True)
+
+    active = [m for m in memories if not m.get("demoted")]
+
+    # Show non-demoted that are past the 14-day window
+    now = _dt.now()
+    past_window = []
+    for m in active:
+        ts = m.get("last_accessed") or m.get("timestamp", "")
+        try:
+            age = (now - _dt.fromisoformat(ts.replace("Z", "+00:00"))).days
+        except Exception:
+            age = 0
+        if age >= 14:
+            reason = "kept_by_scene" if m.get("protected_by_scene") else "kept_by_density"
+            past_window.append((age, reason, m))
+
+    print()
+    print(f"  🧠 Forgetting Curve Digest{' (今日)' if today_filter else ''}")
+    print(f"  {'=' * 50}")
+    print(f"  总记忆: {len(memories)}  |  已降级: {len(demoted)}  |  活跃: {len(active)}")
+    print()
+
+    # Recently demoted (non-archived)
+    recent = [m for m in demoted if not m.get("archived")]
+    if recent:
+        print(f"  ⏳ 已降级 ({len(recent)}):")
+        for m in recent[:5]:
+            scene = m.get("scene", "?")
+            reason = m.get("demoted_reason", "")[:60]
+            summary = m.get("summary", "")[:35]
+            print(f"    · {summary:35s}  scene={scene:12s}  {reason}")
+        print()
+
+    # Retentions past the 14-day window
+    if past_window:
+        print(f"  🔒 超过14天仍在保留 ({len(past_window)}):")
+        past_window.sort(key=lambda x: -x[0])
+        for age, reason, m in past_window[:5]:
+            scene = m.get("scene", "?")
+            summary = m.get("summary", "")[:35]
+            tag = "场景保护" if reason == "kept_by_scene" else "密度稳定"
+            print(f"    · {summary:35s}  scene={scene:12s}  {tag}  ({age}d)")
+        print()
+
+    # Archivable
+    archivable = [m for m in memories
+                  if m.get("demoted") and m.get("demoted_reason", "").find("60") >= 0]
+    if archivable:
+        print(f"  📦 可归档 ({len(archivable)}):")
+        for m in archivable[:3]:
+            summary = m.get("summary", "")[:40]
+            print(f"    · {summary}")
+        print()
 
 
 def _forget_config():
@@ -537,6 +614,18 @@ def main():
         try:
             ic = _import("defense_toolkit.integrity_checker")
             ic.verify()
+        except Exception:
+            pass
+
+    # ── Auto-detect corrections on every command ──
+    # Skip when the command itself is "learn" (would double-learn)
+    if rest and cmd != "learn":
+        user_text = " ".join(rest)
+        try:
+            lrn = _import("learner")
+            hits = lrn.detect_corrections(user_text)
+            if hits:
+                lrn.learn(user_text)
         except Exception:
             pass
 

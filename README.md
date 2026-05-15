@@ -68,6 +68,7 @@ cd moyu_toolkit && python3 moyu.py <command> [args]
 | `moyu forget config` | Show current forgetting curve parameters |
 | `moyu forget set <key> <val>` | Set: `demote_days`, `archive_days`, `density_window`, `enabled` |
 | `moyu forget --summary` | One-line summary of memory lifecycle |
+| `moyu forget history` | Show demotion/retention history with reasons |
 | `moyu compress` | Show compression status and context usage |
 | `moyu compress --now` | Force manual compression |
 | `moyu context` | Show context usage percentage in one line |
@@ -122,7 +123,7 @@ cd moyu_toolkit && python3 moyu.py <command> [args]
 
 | # | Capability | What it does |
 |---|-----------|-------------|
-| 6️⃣ | **Learn from Corrections** | Detects "no/don't/remember" signals — learns lessons after 3 same mistakes |
+| 6️⃣ | **Learn from Corrections** | Auto-detects correction signals ("no/don't/remember") on any MOYU command — learns lessons after pattern repeats 3 times. `moyu learn` for manual trigger. |
 | 7️⃣ | **Self-Reflection** | Analyzes old memories on wake — finds connections & contradictions |
 
 ### 🛡️ Defense Layer — Protect & Verify
@@ -139,7 +140,7 @@ cd moyu_toolkit && python3 moyu.py <command> [args]
 | # | Capability | What it does |
 |---|-----------|-------------|
 | 1️⃣2️⃣ | **Context-Aware Compression** | Two-tier graduated compression: mild (70%+) truncates long memories, auto (85%+) aggressively demotes non-critical items. Compression preserves traceability — original content saved to `refs/` before truncation, retrievable via `moyu ref <name>`. Manual trigger (`moyu compress --now`), status (`moyu compress`), and parameter adjustment (`moyu compress config` / `moyu compress set`) all available. |
-| 1️⃣3️⃣ | **Forgetting Curve** | Three-stage gating: 14-day safety window → access density trend analysis → scene association protection. Frequently used topics protect related memories from being forgotten, even past the window. All parameters adjustable via `moyu forget config` and `moyu forget set`. |
+| 1️⃣3️⃣ | **Forgetting Curve** | Parallel gating (OR): 14-day safety window OR access density trend OR scene association protection. Frequently used topics protect related memories from being forgotten, even past the window. All parameters adjustable via `moyu forget config` and `moyu forget set`. Forgetting visibility via `moyu forget history`. |
 | 1️⃣4️⃣ | **Memory Merge** | Detects related memories by keyword overlap and merges them into a single composite entry. Original details are preserved in an expandable field — nothing is lost. |
 | 1️⃣5️⃣ | **Self-Update** | Checks GitHub for new releases and updates the toolkit in place — preserving memory_data and user config. `moyu update` to check, `moyu update now` to apply. |
 
