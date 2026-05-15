@@ -334,9 +334,18 @@ def _forget_help():
     print("  moyu forget --summary        One-line summary")
     print("  moyu forget config           Show current config")
     print("  moyu forget set <key> <val>  Set a parameter:")
-    print("    demote_days    — Safety window before demotion (default: 14)")
-    print("    archive_days   — Days after demotion before archivable (default: 60)")
-    print("    density_window — Max access timestamps tracked (default: 20)")
+    print("    demote_days       — Safety window before demotion (default: 14)")
+    print("    archive_days      — Days after demotion before archivable (default: 60)")
+    print("    density_window    — Max access timestamps tracked (default: 20)")
+    print("    min_keyword_length — Min chars for auto-extracted scene keywords (default: 3)")
+    print("    auto_scene_extraction — Enable/disable automatic scene keyword extraction (true/false)")
+    print("  moyu forget scene labels")
+    print("    Set custom scene labels in config.yaml → forgetting_curve → scene_labels")
+    print("    Format:")
+    print("      scene_labels:")
+    print('        SceneName1: [keyword1, keyword2]')
+    print('        SceneName2: [keyword3, keyword4, keyword5]')
+    print("    A memory whose summary contains 'keyword1' → assigned to 'SceneName1'")
 
 
 def _forget_config():
@@ -356,6 +365,14 @@ def _forget_config():
         val = fc.get(key, "?")
         print(f"  {key:20s}  {val}")
     print(f"  {'enabled':20s}  {fc.get('enabled', True)}")
+    print(f"  {'min_keyword_length':20s}  {fc.get('min_keyword_length', 3)}")
+    print(f"  {'auto_scene_extraction':20s}  {fc.get('auto_scene_extraction', True)}")
+    # Show scene labels
+    labels = fc.get("scene_labels", {})
+    if labels:
+        print(f"  {'scene_labels':20s}")
+        for scene_name, keywords in labels.items():
+            print(f"    {scene_name:16s}  {', '.join(keywords)}")
     print()
 
 
@@ -369,15 +386,15 @@ def _forget_set(key: str, value: str):
     with open(cfg_path) as f:
         cfg = yaml.safe_load(f) or {}
 
-    allowed = {"demote_days", "archive_days", "density_window", "enabled"}
+    allowed = {"demote_days", "archive_days", "density_window", "enabled", "min_keyword_length", "auto_scene_extraction"}
     if key not in allowed:
         print(f"Unknown key: {key}")
         print(f"Allowed: {', '.join(sorted(allowed))}")
         return
 
-    # Coerce type: bool for enabled, int for the rest
+    # Coerce type: bool for enabled/auto_scene_extraction, int for the rest
     try:
-        if key == "enabled":
+        if key in ("enabled", "auto_scene_extraction"):
             val = value.lower() in ("true", "yes", "1", "on")
         else:
             val = int(value)

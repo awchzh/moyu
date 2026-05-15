@@ -15,6 +15,15 @@ forgetting_curve:
   density_window: 20
   enabled: true
   scene_protection_days: 7
+  # User-defined scene labels (optional). Format:
+  #   scene_labels:
+  #     SceneName1: [keyword1, keyword2, keyword3]
+  #     SceneName2: [keyword4, keyword5]
+  # A memory is assigned to a scene if its summary matches any keyword.
+  # These take priority over auto-extracted keyword scenes.
+  # auto_scene_extraction: Enable/disable automatic keyword-based scene extraction (default: false)
+  # min_keyword_length: Minimum character length for auto-extracted scene keywords
+  min_keyword_length: 3
 learner:
   correction_signals:
   - 不是

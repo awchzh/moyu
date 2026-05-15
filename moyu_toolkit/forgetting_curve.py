@@ -54,58 +54,100 @@ _STOP_WORDS = {
     "about", "into", "over", "after", "before", "between", "through",
 }
 _MIN_SCENE_COUNT = 2  # A keyword must appear in at least this many memories to become a scene
+_MAX_SCENE_COVERAGE = 0.3  # Max fraction of memories a keyword can appear in (anti-noise)
+_DEFAULT_MIN_KEYWORD_LEN = 3  # Minimum chars for auto-extracted scene keywords
 
 
-def _tokenize(text: str) -> list:
-    """Split text into tokens: Chinese multi-char words + English words (len >= 2)."""
+def _load_scene_labels() -> dict:
+    """Load user-defined scene labels from config.yaml.
+    Returns {scene_name: [keyword1, keyword2, ...]}"""
+    cfg = _load_config()
+    labels = cfg.get("scene_labels", {})
+    if isinstance(labels, dict):
+        return labels
+    return {}
+
+
+def _tokenize(text: str, min_len: int = _DEFAULT_MIN_KEYWORD_LEN) -> list:
+    """Split text into tokens: Chinese multi-char words + English words."""
     chinese = re.findall(r'[\u4e00-\u9fff]{2,}', text)
-    english = re.findall(r'[a-zA-Z][a-zA-Z0-9]{1,}', text)
-    return [t.lower() for t in chinese + english if t.lower() not in _STOP_WORDS and len(t) >= 2]
+    english = re.findall(r'[a-zA-Z][a-zA-Z0-9]{' + str(min_len - 1) + r',}', text)
+    return [t.lower() for t in chinese + english if t.lower() not in _STOP_WORDS and len(t) >= min_len]
 
 
-def _extract_scene_keywords(memories: list) -> list:
+def _extract_scene_keywords(memories: list, min_len: int = _DEFAULT_MIN_KEYWORD_LEN) -> list:
     """Extract high-frequency keywords from memory summaries to use as scene labels.
-    Only words appearing in >= _MIN_SCENE_COUNT memories become scenes.
-    Sorted by frequency descending."""
+    Only words appearing in >= _MIN_SCENE_COUNT AND <= _MAX_SCENE_COVERAGE
+    of memories become scenes. Sorted by frequency descending."""
+    total_active = sum(1 for m in memories if not m.get("demoted"))
+    if total_active == 0:
+        return []
+
     counter = {}
     for m in memories:
         if m.get("demoted"):
             continue
-        tokens = set(_tokenize(m.get("summary", "")))
+        tokens = set(_tokenize(m.get("summary", ""), min_len))
         for t in tokens:
             counter[t] = counter.get(t, 0) + 1
-    scenes = [w for w, c in counter.items() if c >= _MIN_SCENE_COUNT]
+
+    max_count = max(1, int(total_active * _MAX_SCENE_COVERAGE))
+    scenes = [w for w, c in counter.items() if _MIN_SCENE_COUNT <= c <= max_count]
     scenes.sort(key=lambda w: -counter[w])
     return scenes
 
 
-def _assign_scene(summary: str, scene_keywords: list) -> str:
-    """Match a summary against scene keywords. Returns first match or 'general'."""
-    if not summary or not scene_keywords:
+def _assign_scene(summary: str, dynamic_keywords: list, user_labels: dict = None) -> str:
+    """Match a summary against scene labels.
+    Priority: user-defined scenes first → dynamic keywords → 'general'."""
+    if not summary:
         return "general"
     low = summary.lower()
-    for kw in scene_keywords:
-        if kw.lower() in low:
-            return kw
+
+    # Priority 1: user-defined scene labels
+    if user_labels:
+        for scene_name, keywords in user_labels.items():
+            for kw in keywords:
+                if kw.lower() in low:
+                    return scene_name
+
+    # Priority 2: dynamic extracted keywords
+    if dynamic_keywords:
+        for kw in dynamic_keywords:
+            if kw.lower() in low:
+                return kw
+
     return "general"
 
 
 def _ensure_scene(memories: list):
-    """Assign scenes to memories using dynamic keyword extraction.
+    """Assign scenes to memories using pre-assigned labels (from memory_bridge),
+    user-defined labels (from config), or dynamic keyword extraction (fallback).
+    Pre-assigned scenes (scene_source: "manual") are never overwritten.
     Uses checkpoint for incremental processing — only new/changed memories."""
     changed = False
-    scene_keywords = _extract_scene_keywords(memories)
+    cfg = _load_config()
+    min_len = cfg.get("min_keyword_length", _DEFAULT_MIN_KEYWORD_LEN)
+    auto_scene = cfg.get("auto_scene_extraction", False)
+    user_labels = _load_scene_labels()
+
+    # Only extract dynamic keywords if auto extraction is enabled
+    dynamic_keywords = _extract_scene_keywords(memories, min_len) if auto_scene else []
     cp = _load_checkpoint()
     last_ts = cp.get("last_processed", "")
     processed = 0
 
     for m in memories:
+        # Pre-assigned scenes (from memory_bridge) are never overwritten
+        if m.get("scene_source") == "manual":
+            continue
+
         if "scene" not in m:
-            m["scene"] = _assign_scene(m.get("summary", ""), scene_keywords)
+            m["scene"] = _assign_scene(m.get("summary", ""), dynamic_keywords, user_labels)
             changed = True
             processed += 1
         elif m.get("timestamp", "") > last_ts:
-            new_scene = _assign_scene(m.get("summary", ""), scene_keywords)
+            new_scene = _assign_scene(m.get("summary", ""), dynamic_keywords, user_labels)
             if m.get("scene") != new_scene:
                 m["scene"] = new_scene
                 changed = True
