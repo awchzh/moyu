@@ -61,3 +61,14 @@ memory:
 security:
   lockout_minutes: 30
   lockout_threshold: 3
+
+# Alert configuration (for tamper detection notifications)
+# channel: none | feishu | webhook | email
+# feishu_webhook: paste your Feishu bot webhook URL here
+# webhook_url: custom HTTP endpoint
+# email_to: requires SMTP setup (not yet implemented)
+alert:
+  channel: none
+  feishu_webhook: ""
+  webhook_url: ""
+  email_to: ""

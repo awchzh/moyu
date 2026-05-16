@@ -25,6 +25,7 @@ RELATION_TYPES = {
     "knows": "knows", "prefers": "prefers", "is_a": "is a",
     "belongs_to": "belongs to", "located_at": "located at", "develops": "develops",
     "depends_on": "depends on", "related_to": "related to",
+    "cross_scene": "cross-scene tunnel",  # MemPalace-inspired: auto-connect scenes sharing entities
 }
 
 
@@ -148,6 +149,65 @@ def add_triples(text: str) -> int:
             kg["relations"].append({"source": sn, "target": tn, "relation": t["relation"], "weight": 1, "created": now})
             added += 1
     _save(kg)
+    return added
+
+
+def add_cross_scene_tunnels() -> int:
+    """Scan all scene-tagged memories for cross-scene entity overlaps.
+    
+    When the same entity appears in memories with different scene tags,
+    create 'cross_scene' edges in the knowledge graph (MemPalace-inspired tunnels).
+    
+    Returns number of new tunnels created.
+    """
+    # Load memories with scene and entity data
+    mem_path = os.path.join(STORAGE_PATH, "conversation_memory.json")
+    if not os.path.exists(mem_path):
+        return 0
+    
+    try:
+        with open(mem_path) as f:
+            memories = json.load(f)
+    except Exception:
+        return 0
+    
+    # Build entity → scenes map
+    entity_scenes = {}  # entity_name → set of scenes
+    for m in memories:
+        scene = m.get("scene", "general")
+        for e in m.get("entities", []):
+            key = e.lower()
+            if key not in entity_scenes:
+                entity_scenes[key] = set()
+            entity_scenes[key].add(scene)
+    
+    # Find entities crossing >= 2 scenes → create tunnel edges
+    kg = _load()
+    existing_edges = {(r["source"], r["target"]) for r in kg["relations"] if r.get("relation") == "cross_scene"}
+    added = 0
+    now = datetime.now().isoformat()
+    
+    for entity, scenes in entity_scenes.items():
+        if len(scenes) < 2:
+            continue
+        scenes_list = sorted(scenes)
+        for i in range(len(scenes_list)):
+            for j in range(i + 1, len(scenes_list)):
+                edge = (_normalize(scenes_list[i]), _normalize(scenes_list[j]))
+                if edge not in existing_edges:
+                    kg["relations"].append({
+                        "source": scenes_list[i],
+                        "target": scenes_list[j],
+                        "relation": "cross_scene",
+                        "weight": 1,
+                        "entity": entity,
+                        "created": now,
+                    })
+                    existing_edges.add(edge)
+                    added += 1
+    
+    if added:
+        _save(kg)
     return added
 
 

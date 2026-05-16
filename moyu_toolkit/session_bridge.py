@@ -208,9 +208,32 @@ def _sync_to_prefill(data: dict):
         if r.get("assistant"):
             prefill.append({"role": "assistant", "content": r["assistant"]})
 
-    # Write
+    # Write — with content security gate
     prefill_path = _prefill_path()
     prefill_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Scan all user messages for injection patterns before writing
+    try:
+        from defense_toolkit.integrity_checker import content_scan
+        clean_rounds = []
+        for r in rounds:
+            user_text = r.get("user", "")
+            if user_text:
+                hits = content_scan(user_text)
+                if hits:
+                    print(f"🔴 Prefill Security Gate: blocked injection in round — detected: {', '.join(hits)}", file=__import__("sys").stderr)
+                    continue  # skip this round entirely
+            clean_rounds.append(r)
+        # Rebuild prefill with clean rounds only
+        prefill = [prefill[0]]  # keep system message
+        for r in clean_rounds:
+            if r.get("user"):
+                prefill.append({"role": "user", "content": r["user"]})
+            if r.get("assistant"):
+                prefill.append({"role": "assistant", "content": r["assistant"]})
+    except ImportError:
+        pass
+
     with open(prefill_path, 'w') as f:
         json.dump(prefill, f, ensure_ascii=False, indent=2)
 

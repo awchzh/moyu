@@ -20,6 +20,7 @@ import json
 import os
 import math
 import re
+import time
 import collections
 import hashlib
 import numpy as np
@@ -62,10 +63,36 @@ def _check_spacy():
 
 # ==================== Configuration ====================
 
-STORAGE_PATH = os.environ.get("MOYU_STORAGE", os.path.join(os.path.dirname(__file__), "memory_data"))
+STORE = os.path.dirname(os.path.abspath(__file__))
+STORAGE_PATH = os.environ.get("MOYU_STORAGE", os.path.join(STORE, "memory_data"))
+
+# Write frequency guard (burst protection)
+WRITE_FREQ_FILE = os.path.join(STORAGE_PATH, "write_freq.json")
+WRITE_LOCK_FILE = os.path.join(STORAGE_PATH, "write_lock.json")
+WRITE_BURST_THRESHOLD = 30   # max writes in the window before trigger
+WRITE_BURST_WINDOW = 60      # seconds
+WRITE_LOCK_MINUTES = 5       # auto-lock duration after burst
 
 # TEMPR retrieval weights (used only as fallback when RRF disabled)
 TEMPR_WEIGHTS = {"semantic": 0.5, "keyword": 0.3, "recency": 0.2}
+
+# Source weight map — agent_confirmed facts are equal to user; system/default discounted
+SOURCE_WEIGHTS = {
+    "user": 1.0,
+    "agent_confirmed": 1.0,
+    "system": 0.85,
+    "agent": 0.85,
+}
+
+# Temporal signal keywords — detect time intent in queries
+TEMPORAL_SIGNALS = {
+    "past": ["上次", "之前", "上周", "昨天", "以前", "过去", "上回", "前段时间", "前一阵",
+             "last", "previous", "before", "yesterday", "earlier", "prior", "ago"],
+    "future": ["计划", "接下来", "下次", "以后", "打算", "想要", "将要", "即将",
+               "plan", "next", "future", "upcoming", "will", "going to"],
+    "recent": ["最近", "近期", "刚刚", "这几天", "近来", "近日",
+               "recent", "lately", "just", "recently"],
+}
 RRF_K = 60
 SEMANTIC_GATE = 0.08  # Drop results below this semantic similarity
 ENTITY_BOOST_WEIGHT = 0.5  # Max entity boost added to score
@@ -259,12 +286,16 @@ def _build_bm25_index(summaries: list) -> tuple:
 
 def score_and_rank(semantic_scores: list, bm25_norm_scores: list,
                    recency_scores: list, entity_boosts: list,
-                   top_k: int, has_real_embeddings: bool = True) -> List[Tuple[float, int]]:
+                   top_k: int, has_real_embeddings: bool = True,
+                   source_weights: list = None,
+                   connectivity_bonuses: dict = None) -> List[Tuple[float, int]]:
     """Hybrid scoring: semantic gate → combined score → sort.
     
     - Semantic gate only applies when has_real_embeddings=True (FastEmbed/API).
       When using n-gram fallback, semantic scores are meaningless, so the gate
       is bypassed.
+    - source_weights: per-entry weight from SOURCE_WEIGHTS map (1.0 for user/agent_confirmed).
+    - connectivity_bonuses: cross-memory entity linking boost.
     """
     scored = []
     for i in range(len(semantic_scores)):
@@ -277,12 +308,30 @@ def score_and_rank(semantic_scores: list, bm25_norm_scores: list,
         ent = entity_boosts[i] if i < len(entity_boosts) else 0.0
         
         raw = sem + bm25 + rec + ent
+        
+        # Source weight: agent_confirmed = user = 1.0, system/agent = 0.85
+        if source_weights and i < len(source_weights):
+            raw *= source_weights[i]
+        
+        # Cross-memory entity connectivity bonus (per-result, after weighting)
+        # This is separate from entity_boosts (which rewards query-entity overlap)
         max_possible = 1.0 + 1.0 + 1.0 + ENTITY_BOOST_WEIGHT
         normalized = min(raw / max_possible, 1.0)
         scored.append((normalized, i))
     
     scored.sort(key=lambda x: -x[0])
-    return scored[:top_k]
+    ranked = scored[:top_k]
+    
+    # Apply connectivity bonuses to ranked results (post-sort, additive)
+    if connectivity_bonuses:
+        boosted = []
+        for norm, i in ranked:
+            bonus = connectivity_bonuses.get(i, 0.0)
+            boosted.append((min(norm + bonus, 1.0), i))
+        boosted.sort(key=lambda x: -x[0])
+        return boosted[:top_k]
+    
+    return ranked
 
 
 # ==================== Embedding ====================
@@ -350,6 +399,132 @@ def get_embedding(text: str, is_query: bool = False) -> Optional[list]:
     return _get_ngram_embedding(text)
 
 
+# ==================== Write Frequency Guard (Burst Protection) ====================
+
+def _check_write_lock() -> bool:
+    """Check if memory writes are currently locked after a burst event."""
+    if not os.path.exists(WRITE_LOCK_FILE):
+        return False
+    try:
+        with open(WRITE_LOCK_FILE) as f:
+            lock = json.load(f)
+        elapsed = time.time() - lock.get("locked_at", 0)
+        if elapsed < WRITE_LOCK_MINUTES * 60:
+            return True  # still locked
+        else:
+            os.remove(WRITE_LOCK_FILE)  # expired
+            return False
+    except Exception:
+        return False
+
+
+def _record_write():
+    """Record a memory write timestamp. If burst threshold exceeded, trigger rollback + lock."""
+    now = time.time()
+    records = []
+    if os.path.exists(WRITE_FREQ_FILE):
+        try:
+            with open(WRITE_FREQ_FILE) as f:
+                records = json.load(f)
+        except Exception:
+            records = []
+
+    # Prune entries outside the window
+    cutoff = now - WRITE_BURST_WINDOW
+    records = [t for t in records if t > cutoff]
+    records.append(now)
+
+    # Check burst
+    if len(records) > WRITE_BURST_THRESHOLD:
+        # Burst detected — save the burst timestamps before clearing
+        burst_records = list(records)
+        _handle_write_burst(burst_records)
+        # Clear freq records after handling
+        with open(WRITE_FREQ_FILE, 'w') as f:
+            json.dump([], f)
+        return
+
+    # Save updated records
+    with open(WRITE_FREQ_FILE, 'w') as f:
+        json.dump(records, f)
+
+
+def _handle_write_burst(burst_records: list = None):
+    """Fine-grained rollback: remove entries written during the burst window.
+    Does NOT touch entries written before the burst started.
+    Locks writes and sends alert."""
+    from defense_toolkit.integrity_checker import log, BASE
+
+    # Lock writes
+    lock_data = {
+        "locked_at": time.time(),
+        "lock_minutes": WRITE_LOCK_MINUTES,
+        "reason": f"Write burst: >{WRITE_BURST_THRESHOLD} writes in {WRITE_BURST_WINDOW}s",
+        "timestamp": datetime.now().isoformat(),
+    }
+    os.makedirs(os.path.dirname(WRITE_LOCK_FILE), exist_ok=True)
+    with open(WRITE_LOCK_FILE, 'w') as f:
+        json.dump(lock_data, f, ensure_ascii=False, indent=2)
+
+    # Determine burst window: earliest timestamp in burst_records is the cutoff
+    cutoff_ts = None
+    if burst_records:
+        min_unix = min(burst_records)
+        cutoff_ts = datetime.fromtimestamp(min_unix).isoformat()
+    else:
+        # Fallback: use current time minus burst window
+        cutoff_ts = datetime.fromtimestamp(time.time() - WRITE_BURST_WINDOW).isoformat()
+
+    # Fine-grained rollback: remove entries written during burst window
+    removed_count = 0
+
+    # conversation_memory.json: remove entries with timestamp >= cutoff_ts
+    mem_path = _storage_path("conversation_memory.json")
+    if os.path.exists(mem_path):
+        try:
+            with open(mem_path) as f:
+                memories = json.load(f)
+            before = len(memories)
+            memories = [m for m in memories if m.get("timestamp", "") < cutoff_ts]
+            removed = before - len(memories)
+            if removed:
+                with open(mem_path, 'w') as f:
+                    json.dump(memories, f, ensure_ascii=False, indent=2)
+                removed_count += removed
+        except Exception:
+            pass
+
+    # vector_index.json: remove entries with timestamp >= cutoff_ts
+    vec_path = _storage_path("vector_index.json")
+    if os.path.exists(vec_path):
+        try:
+            with open(vec_path) as f:
+                idx = json.load(f)
+            before = len(idx.get("vectors", []))
+            idx["vectors"] = [v for v in idx.get("vectors", []) if v.get("timestamp", "") < cutoff_ts]
+            removed = before - len(idx["vectors"])
+            if removed:
+                with open(vec_path, 'w') as f:
+                    json.dump(idx, f, ensure_ascii=False, indent=2)
+                removed_count += removed
+        except Exception:
+            pass
+
+    if removed_count:
+        log(f"Write burst: removed {removed_count} entry/entries after burst, locked {WRITE_LOCK_MINUTES}min", "CRITICAL")
+
+    # Send alert
+    try:
+        from defense_toolkit.integrity_checker import _send_alert
+        _send_alert(
+            f"🔴 MOYU Write Burst Alert: locked for {WRITE_LOCK_MINUTES}min",
+            f"Detected >{WRITE_BURST_THRESHOLD} writes in {WRITE_BURST_WINDOW}s\n"
+            f"Actions: removed {removed_count} burst entries, writes locked for {WRITE_LOCK_MINUTES}min"
+        )
+    except Exception:
+        pass
+
+
 # ==================== Memory Index Management ====================
 
 def _load_index() -> dict:
@@ -361,9 +536,14 @@ def _load_index() -> dict:
 
 
 def _save_index(index: dict):
+    # Write burst guard — check lock first
+    if _check_write_lock():
+        print("🔴 写入已锁定，请等待锁自动解除 (5分钟)")
+        return
     path = _storage_path("vector_index.json")
     with open(path, 'w') as f:
         json.dump(index, f, ensure_ascii=False, indent=2)
+    _record_write()
 
 
 def _load_memories() -> list:
@@ -375,14 +555,31 @@ def _load_memories() -> list:
 
 
 def _save_memories(memories: list):
+    # Write burst guard — check lock first
+    if _check_write_lock():
+        print("🔴 写入已锁定，请等待锁自动解除 (5分钟)")
+        return
     path = _storage_path("conversation_memory.json")
     with open(path, 'w') as f:
         json.dump(memories, f, ensure_ascii=False, indent=2)
+    _record_write()
 
 
 def add_memory(summary: str, source: str = "user",
                metadata: dict = None) -> Optional[dict]:
-    """Add a memory entry with auto-dedup (MD5) + index + entities."""
+    """Add a memory entry with auto-dedup (MD5) + content security gate + index + entities."""
+    # Content Security Gate: reject injection patterns before writing
+    try:
+        from defense_toolkit.integrity_checker import content_scan
+        hits = content_scan(summary)
+        if hits:
+            print(f"🔴 Content Security Gate: memory blocked — detected: {', '.join(hits)}")
+            return None
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
     content_hash = hashlib.md5(summary.encode()).hexdigest()[:16]
     memories = _load_memories()
     
@@ -406,6 +603,15 @@ def add_memory(summary: str, source: str = "user",
     memories.append(entry)
     _save_memories(memories)
     _add_to_index(entry["id"], entry["summary"], entry["timestamp"], source, entities)
+    
+    # Cross-scene tunnel maintenance: detect entity overlaps across scenes
+    # Runs best-effort — silently skips if scenes are not assigned yet
+    try:
+        from knowledge_graph import add_cross_scene_tunnels
+        add_cross_scene_tunnels()
+    except Exception:
+        pass
+    
     return entry
 
 
@@ -444,7 +650,9 @@ def _add_to_index(mid: str, summary: str, ts: str, source: str, entities: list =
 
 
 def batch_index():
-    """Batch index all unindexed memories + fix dimension mismatches"""
+    """Batch index all unindexed memories + fix dimension mismatches.
+    Writes are consolidated into a single _save_index call to avoid triggering
+    the write burst guard (30 writes/60s = batch index of 31+ entries)."""
     memories = _load_memories()
     idx = _load_index()
     indexed = {v["memory_id"] for v in idx["vectors"]}
@@ -456,12 +664,74 @@ def batch_index():
         indexed = set()
     
     to_idx = [m for m in memories if m["id"] not in indexed]
+    added = 0
     for m in to_idx:
-        _add_to_index(m["id"], m.get("summary", ""),
-                      m.get("timestamp", ""), m.get("source", ""),
-                      m.get("entities", []))
-    print(f"✅ Indexed {len(to_idx)}/{len(memories)} memories")
+        vec = get_embedding(m.get("summary", ""))
+        if vec is None:
+            continue
+        idx["vectors"].append({
+            "memory_id": m["id"],
+            "timestamp": m.get("timestamp", ""),
+            "source": m.get("source", ""),
+            "summary": m.get("summary", "")[:80],
+            "entities": m.get("entities", []),
+            "vector": vec,
+        })
+        added += 1
+    
+    if added:
+        _save_index(idx)
+    print(f"✅ Indexed {added}/{len(memories)} memories")
     print(f"   Active vectors: {len(idx['vectors'])}")
+
+
+def _detect_temporal_signal(query: str) -> Optional[str]:
+    """Detect temporal intent in a query: 'past', 'future', 'recent', or None."""
+    q_lower = query.lower()
+    for signal, keywords in TEMPORAL_SIGNALS.items():
+        for kw in keywords:
+            if kw.lower() in q_lower:
+                return signal
+    return None
+
+
+def _build_entity_index(memories: list) -> dict:
+    """Build entity → [memory_id, ...] index for cross-memory linking."""
+    idx = {}
+    for m in memories:
+        for e in m.get("entities", []):
+            key = e.lower()
+            if key not in idx:
+                idx[key] = []
+            if m["id"] not in idx[key]:
+                idx[key].append(m["id"])
+    return idx
+
+
+def _compute_entity_connectivity_boost(candidate_ids: set, entity_index: dict,
+                                        all_ranked_ids: list) -> dict:
+    """Compute connectivity bonus: memories sharing entities with other top candidates get boosted.
+    Returns {memory_id: bonus_score} (cap 0.3)."""
+    bonuses = {}
+    for mid in candidate_ids:
+        # Gather all entities mentioned in this memory (via entity index)
+        mem_entities = set()
+        for entity, mem_ids in entity_index.items():
+            if mid in mem_ids:
+                mem_entities.add(entity)
+        if not mem_entities:
+            continue
+        # Count how many OTHER top candidates share at least one entity with this memory
+        shared_count = 0
+        for other_id in all_ranked_ids:
+            if other_id == mid:
+                continue
+            for entity in mem_entities:
+                if other_id in entity_index.get(entity, []):
+                    shared_count += 1
+                    break
+        bonuses[mid] = min(shared_count * 0.05, 0.3)
+    return bonuses
 
 
 def search(query: str, top_k: int = 5) -> list:
@@ -471,9 +741,10 @@ def search(query: str, top_k: int = 5) -> list:
     1. Embed query
     2. Compute semantic similarity for all vectors
     3. Compute BM25 scores (adaptive sigmoid normalization)
-    4. Compute recency scores
+    4. Detect temporal signal → compute recency scores
     5. Extract query entities → compute entity boosts
-    6. score_and_rank: semantic gate → combined → sorted
+    6. Build entity index → compute connectivity bonuses
+    7. score_and_rank: semantic gate → source-weighted → combined → sorted
     """
     # Load vectors from vector index (JSON)
     idx = _load_index()
@@ -482,6 +753,9 @@ def search(query: str, top_k: int = 5) -> list:
         return []
     memories = _load_memories()
     mem_map = {m["id"]: m for m in memories}
+    
+    # Detect temporal signal in query (Mem0-inspired temporal reasoning)
+    temporal_signal = _detect_temporal_signal(query)
     
     # FTS5 BM25 search
     fts_results = _fts_search(query, top_k * 4)
@@ -495,17 +769,26 @@ def search(query: str, top_k: int = 5) -> list:
             fts_map[r["memory_id"]] = norm
     
     q_vec = get_embedding(query, is_query=True)
+    
+    # Dimension mismatch guard: if query vec dim differs from indexed vecs, fall back to n-gram
+    if q_vec and vectors and len(q_vec) != len(vectors[0].get("vector", [])):
+        q_vec = _get_ngram_embedding(query)
+    
     q_words = re.findall(r'[\u4e00-\u9fff]|[a-zA-Z0-9]+', query.lower())
     
     # Extract entities from query for boosting
     q_entities = _extract_entities(query)
     q_entity_set = set(e.lower() for e in q_entities)
     
+    # Build entity index for cross-memory connectivity
+    entity_index = _build_entity_index(memories)
+    
     # Compute individual strategy scores for all entries
     sem_scores = []
     bm25_scores = []
     recency_scores = []
     entity_boosts = []
+    source_weights = []
     
     for i, entry in enumerate(vectors):
         # Semantic score
@@ -516,11 +799,24 @@ def search(query: str, top_k: int = 5) -> list:
         bm25 = fts_map.get(entry["memory_id"], 0.0)
         bm25_scores.append(bm25)
         
-        # Recency score
+        # Recency score — with temporal reasoning
         try:
             mt = datetime.fromisoformat(entry.get("timestamp", "").replace("Z", "+00:00"))
-            age = max(0, (datetime.now() - mt).total_seconds() / 3600)
-            recency_scores.append(max(0.1, 1.0 - age / (30 * 24)))
+            age_hours = max(0, (datetime.now() - mt).total_seconds() / 3600)
+            age_days = age_hours / 24
+            
+            if temporal_signal == "recent":
+                # Heavy boost for very recent (< 3 days), steep decay after
+                recency_scores.append(max(0.1, 1.0 - age_hours / (7 * 24)))
+            elif temporal_signal == "past":
+                # Invert: boost older memories, cap recent ones
+                recency_scores.append(min(1.0, max(0.1, age_days / 30)))
+            elif temporal_signal == "future":
+                # Neutral: all equally relevant for planning
+                recency_scores.append(0.7)
+            else:
+                # Default: linear decay over 30 days
+                recency_scores.append(max(0.1, 1.0 - age_days / 30))
         except Exception:
             recency_scores.append(0.5)
         
@@ -533,10 +829,22 @@ def search(query: str, top_k: int = 5) -> list:
             entity_boosts.append(boost)
         else:
             entity_boosts.append(0.0)
+        
+        # Source weight: agent_confirmed = user = 1.0, system/agent discounted
+        src = entry.get("source", "user")
+        source_weights.append(SOURCE_WEIGHTS.get(src, 0.7))
     
     # score_and_rank hybrid fusion
     has_real_embeds = _check_fastembed() or bool(_get_embedding_api()[0] and _get_embedding_api()[0] not in ('your-api-key-here', ''))
-    ranked = score_and_rank(sem_scores, bm25_scores, recency_scores, entity_boosts, top_k, has_real_embeddings=has_real_embeds)
+    
+    # Build connectivity bonuses from entity index (cross-memory linking)
+    all_ids = {v["memory_id"] for v in vectors}
+    connectivity_bonuses = _compute_entity_connectivity_boost(all_ids, entity_index, all_ids)
+    
+    ranked = score_and_rank(sem_scores, bm25_scores, recency_scores, entity_boosts, top_k,
+                            has_real_embeddings=has_real_embeds,
+                            source_weights=source_weights,
+                            connectivity_bonuses=connectivity_bonuses)
     
     results = []
     for score, i in ranked:
