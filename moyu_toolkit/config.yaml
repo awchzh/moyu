@@ -63,12 +63,10 @@ security:
   lockout_threshold: 3
 
 # Alert configuration (for tamper detection notifications)
-# channel: none | feishu | webhook | email
+# channel: none | feishu | webhook
 # feishu_webhook: paste your Feishu bot webhook URL here
-# webhook_url: custom HTTP endpoint
-# email_to: requires SMTP setup (not yet implemented)
+# webhook_url: custom HTTP endpoint that accepts JSON POST
 alert:
   channel: none
   feishu_webhook: ""
   webhook_url: ""
-  email_to: ""

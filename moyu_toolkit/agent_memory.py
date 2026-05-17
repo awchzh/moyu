@@ -540,10 +540,10 @@ def _save_index(index: dict):
     if _check_write_lock():
         print("🔴 写入已锁定，请等待锁自动解除 (5分钟)")
         return
+    _record_write()  # record BEFORE write to avoid missing counts on write failure
     path = _storage_path("vector_index.json")
     with open(path, 'w') as f:
         json.dump(index, f, ensure_ascii=False, indent=2)
-    _record_write()
 
 
 def _load_memories() -> list:
@@ -559,10 +559,10 @@ def _save_memories(memories: list):
     if _check_write_lock():
         print("🔴 写入已锁定，请等待锁自动解除 (5分钟)")
         return
+    _record_write()  # record BEFORE write
     path = _storage_path("conversation_memory.json")
     with open(path, 'w') as f:
         json.dump(memories, f, ensure_ascii=False, indent=2)
-    _record_write()
 
 
 def add_memory(summary: str, source: str = "user",
@@ -575,6 +575,18 @@ def add_memory(summary: str, source: str = "user",
         if hits:
             print(f"🔴 Content Security Gate: memory blocked — detected: {', '.join(hits)}")
             return None
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # ── PII Redaction: detect and mask sensitive info before storage ──
+    try:
+        from defense_toolkit.pii_redactor import redact as _redact_pii
+        redacted, pii_types = _redact_pii(summary)
+        if pii_types:
+            print(f"🔏 PII redacted: {', '.join(pii_types)}")
+            summary = redacted  # Replace summary with redacted version
     except ImportError:
         pass
     except Exception:
@@ -730,7 +742,12 @@ def _compute_entity_connectivity_boost(candidate_ids: set, entity_index: dict,
                 if other_id in entity_index.get(entity, []):
                     shared_count += 1
                     break
+        # Per-entry cap 0.3, total sum capped globally if passed via context
         bonuses[mid] = min(shared_count * 0.05, 0.3)
+    # Global cap: no single memory should get more than 0.3 total connectivity bonus
+    # (prevents stacking across multiple entity overlaps from dominating results)
+    for mid in bonuses:
+        bonuses[mid] = min(bonuses[mid], 0.3)
     return bonuses
 
 

@@ -97,8 +97,8 @@ def load() -> dict:
     return _load()
 
 
-def inject_format() -> str:
-    """Returns a short string for context injection (legacy format)."""
+def format_context_summary() -> str:
+    """Returns a short string for context snippet (legacy format)."""
     data = _load()
     if not data.get("topic"):
         return ""

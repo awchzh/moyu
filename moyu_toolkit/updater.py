@@ -21,17 +21,17 @@ import zipfile
 from pathlib import Path
 
 # ── Version (also importable) ──
-VERSION = "2.1.2"
+VERSION = "2.4.0"
 
 # Known SHA256 checksums for release zips, keyed by version tag.
 # Verified before extracting updates.
 # NOTE: Circular dependency — a version's own checksum cannot be embedded
 # in that version (the updater.py is part of the zip). New versions leave
 # their own checksum empty; it gets filled in the NEXT release.
+# TOFU: first successful update auto-caches checksum locally.
 _CHECKSUMS = {
-    "2.1.0": "6d9060a81fe9517c82108a7f3a8c820b6a454f5e6f17af50085edb49087cc0a3",
-    "2.1.1": "",
-    "2.1.2": "",
+    "2.3.0": "",
+    "2.4.0": "",
 }
 
 TOOLKIT_DIR = Path(__file__).parent.resolve()
@@ -39,6 +39,7 @@ REPO = "awchzh/moyu-memory"
 GITHUB_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 EXCLUDE_DIRS = {"memory_data", "__pycache__"}
 EXCLUDE_FILES = {".DS_Store", "*.pyc"}
+_LOCAL_CHECKSUMS_PATH = TOOLKIT_DIR / ".moyu_checksums.json"  # TOFU: cache checksums after first successful update
 
 
 def _current_version() -> str:
@@ -110,6 +111,16 @@ def update(dry_run: bool = False) -> dict:
     # ── SHA256 checksum verification ──
     import hashlib
     expected = _CHECKSUMS.get(info["latest"])
+
+    # Also check local TOFU cache (populated after first successful update)
+    if not expected and _LOCAL_CHECKSUMS_PATH.exists():
+        try:
+            with open(_LOCAL_CHECKSUMS_PATH) as f:
+                local_cs = json.load(f)
+            expected = local_cs.get(info["latest"], "")
+        except Exception:
+            pass
+
     if expected:
         sha = hashlib.sha256()
         with open(zip_path, 'rb') as f:
@@ -183,6 +194,23 @@ def update(dry_run: bool = False) -> dict:
         if mem_data.exists():
             shutil.rmtree(mem_data, ignore_errors=True)
         shutil.copytree(mem_backup, mem_data)
+
+    # ── Save checksum for next update (TOFU: first update has no checksum, subsequent ones do) ──
+    if not _CHECKSUMS.get(info["latest"]) and zip_path.exists():
+        sha = hashlib.sha256()
+        with open(zip_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(65536), b''):
+                sha.update(chunk)
+        local_cs = {}
+        if _LOCAL_CHECKSUMS_PATH.exists():
+            try:
+                with open(_LOCAL_CHECKSUMS_PATH) as f:
+                    local_cs = json.load(f)
+            except Exception:
+                pass
+        local_cs[info["latest"]] = sha.hexdigest()
+        with open(_LOCAL_CHECKSUMS_PATH, 'w') as f:
+            json.dump(local_cs, f)
 
     shutil.rmtree(tmp_dir, ignore_errors=True)
 

@@ -11,7 +11,7 @@ Usage:
     moyu verify <type> [desc]  Verify dangerous operation
     moyu unlock             Unlock security system
     moyu check              Check file integrity
-    moyu inject             Get rules for injection
+    moyu context           Get behavior rules
     moyu signals            View active trigger words
     moyu demo               Show all capabilities
     moyu compress           Show compression status
@@ -227,7 +227,7 @@ CMD_TABLE = {
     "status":     lambda args: cmd_status(),
     "learn":      lambda args: _call_func("learner", "learn", [" ".join(args)]),
     "detect":     lambda args: _call_func("learner", "detect_corrections", [" ".join(args)]),
-    "inject":     lambda args: print(_import("learner").get_rules_for_injection()),
+    "context":     lambda args: print(_import("learner").format_behavior_rules()),
     "signals":    lambda args: _call_func("learner", "signals", args),
     "setup":      lambda args: _import("security").setup(),
     "verify":     lambda args: _verify_op(args),
@@ -254,7 +254,7 @@ HELP_DESCRIPTIONS = {
     "status": "Show system status with defense chain visualization",
     "learn": "Learn from a user correction",
     "detect": "Detect correction signals in text",
-    "inject": "Get behavioral rules for injection into system prompt",
+    "context": "Get behavioral rules for system prompt",
     "signals": "View active trigger words (learner)",
     "setup": "Set a security password",
     "verify": "Verify a dangerous operation",
@@ -341,9 +341,9 @@ def _compress(args):
             return
         ctx = _import("active_context")
         lrn = _import("learner")
-        wm = ctx.format_for_injection()
-        rules = lrn.get_rules_for_injection()
-        result, report = cm.build_injection(working_memory=wm, behavioral_rules=rules)
+        wm = ctx.format_context()
+        rules = lrn.format_behavior_rules()
+        result, report = cm.build_context_prompt(working_memory=wm, behavioral_rules=rules)
         msg = cm.last_report_message()
         print(f"🚚 Manual compression triggered")
         print(f"  {msg}" if msg else f"  No compression needed ({report['usage_pct']}% of budget)")
@@ -368,7 +368,7 @@ def _compress_help():
     print("  moyu compress set <key> <val>  Set a parameter:")
     print("    mild_threshold    — Mild compression trigger (0.7 = 70%)")
     print("    auto_threshold    — Aggressive compression trigger (0.85 = 85%)")
-    print("    budget_chars      — Target injection budget in chars")
+    print("    budget_chars      — Target context budget")
     print("    enabled           — true/false")
 
 

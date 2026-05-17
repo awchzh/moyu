@@ -28,7 +28,7 @@ COMPRESS_LOG = STORAGE / "compression_log.json"
 
 # ── Defaults (overridable via config) ──
 
-DEFAULT_BUDGET = 2000       # Target injection budget in chars (~500 tokens)
+DEFAULT_BUDGET = 2000       # Target context budget in chars (~500 tokens)
 DEFAULT_WARN = 0.8          # Warning threshold (80%) — display only
 DEFAULT_MILD = 0.7          # Mild compression (70%) — truncate/defer
 DEFAULT_AUTO = 0.85         # Aggressive compression (85%) — demote/truncate hard
@@ -125,7 +125,7 @@ def _load_compression_config() -> dict:
 
 
 class InjectionPayload:
-    """Represents everything about to be injected into context."""
+    """Represents everything about to be placed into context."""
 
     def __init__(self, budget: int = DEFAULT_BUDGET,
                  mild_at: float = DEFAULT_MILD,
@@ -140,7 +140,7 @@ class InjectionPayload:
 
     def add(self, name: str, content: str, priority: int = 5, category: str = "memory"):
         """
-        Register an injection candidate.
+        Register a context section.
         Priority: 1=critical (never dropped), 10=optional (dropped first)
         Category: working_memory, rule, memory, graph, profile
         """
@@ -287,14 +287,14 @@ class InjectionPayload:
 # ── API ──
 
 
-def prepare_injection(
+def prepare_context(
     sections: list[tuple[str, str, int, str]],
     budget: int = DEFAULT_BUDGET,
     mild_at: float = DEFAULT_MILD,
     auto_at: float = DEFAULT_AUTO,
 ) -> tuple[str, dict]:
     """
-    Build compressed injection string from sections.
+    Build compressed context string from sections.
 
     Each section: (name, content, priority, category)
     Returns: (compressed_string, compression_report)
@@ -329,13 +329,13 @@ def prepare_injection(
     _save_compress_log(log)
 
     report = {
-        "injected_chars": payload.total_chars(),
-        "injected_tokens": payload.total_tokens(),
+        "context_chars": payload.total_chars(),
+        "context_tokens": payload.total_tokens(),
         "budget": budget,
         "usage_pct": payload.usage_pct(),
         "compressed": len(actions) > 0,
         "actions": actions,
-        "sections_injected": len(payload.sections),
+        "sections_included": len(payload.sections),
         "sections_total": len(sections) + len(actions),
     }
 
@@ -493,15 +493,74 @@ def check_status() -> dict:
     }
 
 
-def build_injection(
+# ═══════════════════════════════════════════════════════════
+# Mermaid task map — structured task-path visualization
+# ═══════════════════════════════════════════════════════════
+
+def build_task_map(memory_summaries: list) -> str:
+    """Generate a Mermaid graph TD from recent memory summaries.
+
+    Gives the agent a bird's-eye view of what's been done, what's in progress,
+    and what's blocked — without reading through all the raw summaries.
+
+    Args:
+        memory_summaries: list of {timestamp, summary} dicts, newest first.
+
+    Returns:
+        Mermaid graph TD string (empty if < 2 summaries), or "".
+    """
+    if len(memory_summaries) < 2:
+        return ""
+
+    # Build nodes from oldest to newest (display order)
+    items = list(reversed(memory_summaries))[:10]
+    nodes = []
+
+    # Status detection keywords
+    DONE_KW = ["✅", "完成", "通过", "已发布", "已推", "修好了", "done", "pass"]
+    BLOCK_KW = ["❌", "失败", "阻塞", "block", "待定", "卡住"]
+    DECISION_KW = ["用户说", "用户选择", "决定", "→", "选"]
+
+    for i, m in enumerate(items):
+        label = m.get("summary", "")[:50].replace('"', "'")
+        ts = m.get("timestamp", "")[:10]
+
+        # Detect status
+        lower = label.lower()
+        if any(kw.lower() in lower for kw in BLOCK_KW):
+            style = "🔴"
+        elif any(kw.lower() in lower for kw in DONE_KW):
+            style = "✅"
+        elif any(kw.lower() in lower for kw in DECISION_KW):
+            style = "🔀"
+        elif i == len(items) - 1 and not any(kw.lower() in lower for kw in DONE_KW):
+            style = "🔄"  # last one, no explicit done marker → in progress
+        else:
+            style = "  "
+
+        short = label[:35] + ("..." if len(label) > 35 else "")
+        nodes.append(f"    N{i}[{style} {short}]")
+
+    # Connect edges — linear chain (simple, reliable, never wrong)
+    edges = " --> ".join(f"N{i}" for i in range(len(nodes)))
+
+    return "```mermaid\ngraph LR\n" + "\n".join(nodes) + "\n    " + edges + "\n```"
+
+
+# ═══════════════════════════════════════════════════════════
+# Public API
+# ═══════════════════════════════════════════════════════════
+
+def build_context_prompt(
     working_memory: str = "",
     behavioral_rules: str = "",
     memory_search: str = "",
     knowledge_graph: str = "",
     user_profile: str = "",
     bridge_context: str = None,
+    task_map: str = "",
 ) -> tuple[str, dict]:
-    """Build a compressed injection payload from all available context sources."""
+    """Build a compressed context prompt from all available context sources."""
     cfg = _load_compression_config()
 
     if not cfg["enabled"]:
@@ -509,6 +568,9 @@ def build_injection(
         return "\n\n".join(parts), {"compressed": False, "reason": "disabled in config"}
 
     sections = []
+
+    if task_map.strip():
+        sections.append(("task_map", task_map.strip(), 1, "task_map"))
 
     if working_memory.strip():
         sections.append(("working_memory", working_memory.strip(), 1, "working_memory"))
@@ -523,7 +585,7 @@ def build_injection(
     if bridge_context and bridge_context.strip():
         sections.append(("bridge_context", bridge_context.strip(), 1, "bridge"))
 
-    return prepare_injection(sections,
+    return prepare_context(sections,
                              budget=cfg["budget_chars"],
                              mild_at=cfg["mild_threshold"],
                              auto_at=cfg["auto_threshold"])

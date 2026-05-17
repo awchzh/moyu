@@ -32,7 +32,7 @@ def wake(dry_run: bool = False) -> str:
     """
     Full wake-up routine:
       1. Load all context sources
-      2. Compress via build_injection
+      2. Compress via build_context_prompt
       3. Return a single-line status message
 
     Returns a status message the agent can speak to the user.
@@ -48,14 +48,6 @@ def wake(dry_run: bool = False) -> str:
     sr = _import("self_reflection")
     ic = _import("defense_toolkit.integrity_checker")
 
-    # ── Step 0: Silent integrity check + daily backup ──
-    # Runs verify() which checks hashes and creates daily backup on success.
-    # User only sees a message if tampering was detected.
-    try:
-        ic.verify()
-    except Exception:
-        pass
-
     # ── Step 0: Check context pressure level ──
     status = cm.check_status()
     context_pressure = status.get("level") in ("auto", "over", "warn")
@@ -69,7 +61,7 @@ def wake(dry_run: bool = False) -> str:
 
     # ── Step 0d: Load session bridge ──
     bridge_info = sb.load()
-    bridge_text = sb.inject_format()
+    bridge_text = sb.format_context_summary()
 
     # ── Step 0e: Self-reflection (only under pressure, compact mode) ──
     reflection_msg = ""
@@ -95,8 +87,8 @@ def wake(dry_run: bool = False) -> str:
         integrity_msg = "完整性校验未初始化（moyu init）"
 
     # ── Step 1: Collect context ──
-    working_memory = ac.format_for_injection()
-    behavioral_rules = lrn.get_rules_for_injection()
+    working_memory = ac.format_context()
+    behavioral_rules = lrn.format_behavior_rules()
 
     # Fetch recent memories (raw, no embedding needed) — skip demoted
     recent_memories = ""
@@ -133,6 +125,13 @@ def wake(dry_run: bool = False) -> str:
         except Exception:
             pass
 
+    # Also build task map from recent memory summaries (structured overview)
+    task_map = ""
+    try:
+        task_map = cm.build_task_map(sorted_mem)
+    except Exception:
+        pass
+
     # ── Step 2: Compress or just check ──
     if dry_run:
         # Only check status, don't compress
@@ -147,12 +146,13 @@ def wake(dry_run: bool = False) -> str:
 
     # Normal wake — compress
     bridge_context = bridge_text if bridge_text else None
-    result, report = cm.build_injection(
+    result, report = cm.build_context_prompt(
         working_memory=working_memory,
         behavioral_rules=behavioral_rules,
         memory_search=recent_memories,
         user_profile=user_profile,
         bridge_context=bridge_context,
+        task_map=task_map,
     )
 
     # ── Step 3: Build status message ──
@@ -204,7 +204,7 @@ def demo() -> dict:
     2. Load behavioral rules       ✅
     3. Fetch recent memories       ✅
     4. Load user profile           ✅
-    5. Compress via build_injection ✅
+    5. Compress via build_context_prompt ✅
     6. Return status message       ✅
 
   User hears (when 80%+ warning):

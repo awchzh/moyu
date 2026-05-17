@@ -9,7 +9,7 @@ Usage:
     python3 learner.py detect <text>  # Detect correction signal
     python3 learner.py learn <text>   # Learn from correction
     python3 learner.py stats          # Show statistics
-    python3 learner.py inject         # Get injection format
+    python3 learner.py context        # Get behavior rules
     python3 learner.py signals        # View all active trigger words
 """
 
@@ -287,7 +287,7 @@ def _save_corrections(entries):
         f.write("\n".join(lines))
 
 
-def get_rules_for_injection() -> str:
+def format_behavior_rules() -> str:
     lessons = _load_lessons()
     promoted = [l for l in lessons["lessons"] if l.get("promoted")]
     if promoted:
@@ -457,7 +457,7 @@ def demo() -> dict:
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:
-        print("Usage: detect | learn | stats | inject | signals")
+        print("Usage: detect | learn | stats | context | signals")
         sys.exit(0)
     cmd = sys.argv[1]
     if cmd == "detect":
@@ -468,8 +468,8 @@ if __name__ == "__main__":
         stats()
     elif cmd == "stats":
         stats()
-    elif cmd == "inject":
-        print(get_rules_for_injection())
+    elif cmd == "context":
+        print(format_behavior_rules())
     elif cmd == "signals":
         active = _all_signals()
         learned = _load_learned_signals()

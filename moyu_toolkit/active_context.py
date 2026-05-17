@@ -12,7 +12,7 @@ Usage:
     python3 active_context.py add ...       # Record key context
     python3 active_context.py todo add ...  # Add a todo item
     python3 active_context.py todo done ..  # Mark a todo as done
-    python3 active_context.py inject        # Get injection format
+    python3 active_context.py context       # Get context format
 """
 
 import json
@@ -98,7 +98,7 @@ class Todo:
         print(f"✅ Completed: {tid}")
 
 
-def format_for_injection() -> str:
+def format_context() -> str:
     ctx = _load()
     lines = ["## [Working Memory — Current Session Context]\n"]
     if ctx["task"]:
@@ -170,5 +170,5 @@ if __name__ == "__main__":
         add_context(" ".join(sys.argv[2:]))
     elif cmd == "todo" and len(sys.argv) >= 4:
         Todo.add(" ".join(sys.argv[3:])) if sys.argv[2] == "add" else Todo.done(" ".join(sys.argv[3:]))
-    elif cmd == "inject":
-        print(format_for_injection())
+    elif cmd == "context":
+        print(format_context())

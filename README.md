@@ -1,259 +1,258 @@
-# MOYU — AI Agent Secure Memory Toolkit
+# MOYU — AI Agent 安全记忆工具包
 
-**Your AI remembers everything. But is it safe? Can it survive context compression? Will old memories pile up forever?**
+**你的 AI 记得所有对话，但你的记忆真的安全吗？旧记忆会撑爆上下文吗？**
 
-MOYU is a lightweight, zero-trust memory layer for AI Agents. Drop it into any Python project — your Agent gains **secure, self-managing, cross-session memory** in minutes.
+MOYU（墨羽）是一个轻量级的 AI 记忆工具包，给你的 Agent 装上**安全、自动管理、跨会话持久化**的记忆系统。纯 Python，零基础设施，一个文件夹即插即用。支持 Hermes、OpenClaw、LangChain、AutoGen 或任何自定义 Python 项目。
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Dependencies](https://img.shields.io/badge/dependencies-numpy%20%7C%20requests-green)]()
-
-**No Docker. No database. No registration. No API vendor lock-in. Pure Python, copy & use.**
+**v2.4.0** — 25 项能力，6 大分类。
 
 ---
 
-## 🎯 What MOYU is really about
-
-Three things that every other memory solution ignores:
-
-| Your problem | MOYU's answer |
-|-------------|---------------|
-| **"Is my Agent's memory file being tampered?"** | 🔒 **Defense chain** — password gate + integrity check (SHA256) + forensic analysis + auto-recovery from backup |
-| **"My AI's context window is filling up — what do I delete?"** | 🌿 **Lifecycle management** — adaptive compression + forgetting curve (parallel gates) + scene-protected retention |
-| **"Can I take this to another project?"** | 📦 **Zero infrastructure** — one folder, `pip install numpy requests`, works with Hermes / OpenClaw / LangChain / custom Python |
-
-MOYU has 15 capabilities (all of them real, all verified working). But these three are what no one else does.
-
----
-
-## 30-Second Quick Start
+## 🚀 快速开始
 
 ```bash
-pip install numpy requests pyyaml
+pip install -r requirements.txt
 ```
 
-Copy the `moyu_toolkit/` folder into your project. First search:
+将 `moyu_toolkit/` 文件夹复制到你的项目中，直接跑：
 
 ```bash
 cd moyu_toolkit
-python3 moyu.py search "what did we talk about"
+python3 moyu.py search "上次聊了什么"
 ```
 
-> **Zero-config mode:** Works immediately with local fallback. When you need better retrieval, install FastEmbed (`pip install fastembed`). No API key required.
+> **零配置模式：** 即装即用，无需 API Key。安装 FastEmbed 后可开启语义搜索（`pip install fastembed`）。
 
 ```bash
-python3 moyu.py help          # Full command reference
-python3 moyu.py demo          # See all capabilities in action
-python3 moyu.py init          # Initialize integrity protection
+python3 moyu.py help          # 查看所有命令
+python3 moyu.py demo          # 查看能力演示
+python3 moyu.py init          # 初始化记忆文件保护
 ```
 
 ---
 
-## 📋 Complete Command Reference
+## 📋 命令参考
 
-All commands through a unified CLI:
+所有命令通过统一入口调用：
 
 ```bash
-python3 moyu.py <command> [args]
+python3 moyu.py <命令> [参数]
 ```
 
-### 1️⃣ Defense & Security (MOYU's core differentiator)
+### 🛡️ 防御与安全（MOYU 独有的差异化能力）
 
-| Command | What it does | Why you need it |
-|---------|-------------|-----------------|
-| `moyu setup` | Set a security password | Dangerous ops need password confirmation |
-| `moyu verify <type> [desc]` | Verify a dangerous operation | Blocks memory data corruption before it happens |
-| `moyu unlock` | Unlock after 3 failed attempts | Auto-lockout prevents brute force |
-| `moyu check` | Check all file integrity (SHA256) | Detects tampering — even data files that change daily are tracked |
-| `moyu audit` | Full security audit — all 3 layers | One report: password status + integrity status + recovery readiness |
-| `moyu init` | Initialize integrity manifest | First step to enable the defense chain |
+| 命令 | 说明 |
+|------|------|
+| `moyu setup` | 设置安全密码（危险操作需要密码确认） |
+| `moyu verify <类型> [描述]` | 验证危险操作（删除、修改配置等） |
+| `moyu unlock` | 解锁安全系统（连续 3 次失败后自动锁定 30 分钟） |
+| `moyu check` | 检查所有文件的完整性（SHA256 比对 + 自动恢复） |
+| `moyu audit` | 完整安全审计——四层防御一览 |
+| `moyu init` | 初始化完整性校验清单 |
+| `moyu inject` | 获取注入行为规则（已更名为 `moyu context`，向下兼容） |
 
-**How the defense chain works:**
-
+四层防御链：
 ```
-Layer 1 (Pre-operation): password verification → blocks dangerous edits
-Layer 2 (On-wake):       integrity check + forensic analysis → detects tampering
-Layer 3 (Post-tamper):   auto-recovery from daily backup → restores clean state
+第 1 层（事前）：内容安检闸 + PII 脱敏 → 注入和敏感信息不入库
+第 2 层（操作前）：密码验证 → 阻止危险操作
+第 3 层（启动时）：完整性校验 + 法医分析 → 检测篡改
+第 4 层（事后）：自动恢复 → 从每日备份还原
 ```
 
-### 2️⃣ Memory & Semantic Retrieval
+**额外防御：**
+- **写入爆发防护** — 60 秒内超过 30 次写入触发细粒度回滚 + 锁定 5 分钟 + 告警
+- **工具调用环检测** — Agent 层拦截无限循环，SHA256 指纹 + 周期识别 + 硬熔断
+- **PII 脱敏** — 中国手机号/身份证/银行卡 + 国际电话/Email/SSN/信用卡/IP，正则自动替换，不进知识图谱
 
-| Command | What it does |
-|---------|-------------|
-| `moyu search <query>` | Search memories using TEMPR multi-strategy (semantic + keyword + time) |
-| `moyu stats` | All statistics: memory count, embedding type, source distribution, entities |
-| `moyu status` | System status with defense chain visualization |
-| `moyu inject` | Get behavioral rules for injection into system prompt |
-| `moyu signals` | View active trigger words (learner) |
+### 🧠 记忆与检索
 
-**Search quality:** Local FastEmbed (BAAI/bge-small-zh-v1.5, 512-dim semantic vector). Falls back gracefully to n-gram + BM25 when FastEmbed is not installed. Never breaks.
+| 命令 | 说明 |
+|------|------|
+| `moyu search <关键词>` | TEMPR 多策略检索（语义 + BM25 关键词 + 时间加权） |
+| `moyu stats` | 显示全部统计（记忆数、嵌入类型、来源分布） |
+| `moyu status` | 系统状态与防御链可视化 |
+| `moyu context` | 获取行为规则（注入到系统提示词中使用） |
+| `moyu signals` | 查看已激活的关键词（来自学习者模块） |
 
-### 3️⃣ Lifecycle & Compression (auto-context management)
+搜索质量：本地 FastEmbed 512 维语义向量，不装也不崩——自动降级为 n-gram + BM25。支持 SQLite FTS5 全文索引。
 
-| Command | What it does |
-|---------|-------------|
-| `moyu compress` | Show compression status and context usage |
-| `moyu compress --now` | Force manual compression (requires password) |
-| `moyu compress config` | Show compression parameters |
-| `moyu compress set <k> <v>` | Adjust thresholds (mild_threshold, auto_threshold, etc.) |
-| `moyu context` | One-line context usage percentage |
-| `moyu forget` | Show forgetting curve status (two-stage gating, density analysis) |
-| `moyu forget config` | Show forgetting curve parameters |
-| `moyu forget set <k> <v>` | Adjust: `demote_days`, `archive_days`, `density_window`, `enabled` |
-| `moyu forget --summary` | One-line memory lifecycle summary |
-| `moyu forget history` | What was demoted, what was kept, and why |
-| `moyu ref <name>` | Read original content of a compressed memory |
-| `moyu ref list` | List all available refs |
+### 📊 知识层
 
-**How the forgetting curve works (parallel gating — OR logic):**
+| 命令 | 说明 |
+|------|------|
+| `moyu kg search <实体>` | 搜索知识图谱中的实体关系 |
+| `moyu kg search <实体> --snapshot YYYY-MM-DD` | 时间快照查询——查看过去某个时刻的知识图谱状态 |
+| `moyu kg search <实体> --snapshot all` | 包含全部历史关系（含已失效） |
+| `moyu kg history <实体>` | 查看实体完整时间线（所有关系的生命周期） |
+| `moyu kg invalidate --source X --target Y --relation Z` | 标记关系失效（不删除，可回溯） |
+| `moyu kg invalidate --entity E` | 失效某实体及其所有关系 |
+| `moyu kg stats` | 知识图谱统计（活跃/失效/总数） |
+| `moyu kb list` | 列出所有工作流知识文件 |
+| `moyu kb search <关键词>` | 搜索知识文件 |
+| `moyu kb index` | 重建关键词索引 |
+| `moyu kb read <文件>` | 读取知识文件 |
 
-- **Safety window** (default 14 days): nothing demoted before this
-- **Access density**: frequently-used topics survive longer
-- **Scene protection**: related memories protect each other, even past the window
-- All parameters adjustable. Runs automatically every 2 hours via cron.
+### ⏳ 生命周期与上下文管理
 
-### 4️⃣ Learning & Reflection (get better from interaction)
+| 命令 | 说明 |
+|------|------|
+| `moyu compress` | 查看上下文压缩状态 |
+| `moyu compress --now` | 手动触发压缩（需密码） |
+| `moyu compress config` | 查看压缩参数 |
+| `moyu compress set <键> <值>` | 调整压缩阈值 |
+| `moyu context` | 一行显示上下文使用率 |
+| `moyu forget` | 查看遗忘曲线状态（三闸门 + 密度分析 + 蒸馏统计） |
+| `moyu forget config` | 查看遗忘曲线参数 |
+| `moyu forget set <键> <值>` | 调整遗忘参数（保护天数、归档天数等） |
+| `moyu forget --summary` | 一行摘要显示记忆生命周期 |
+| `moyu ref <名称>` | 读取被压缩记忆的原始内容 |
+| `moyu ref list` | 列出所有压缩记录 |
 
-| Command | What it does |
-|---------|-------------|
-| `moyu learn <text>` | Learn from a user correction (extracts pattern after 3 repeats) |
-| `moyu detect <text>` | Detect correction signals in text ("no/don't/remember") |
-| `moyu reflect` | Run self-reflection (cross-time connections, contradictions) |
+遗忘曲线 + 知识蒸馏：
+- **三闸门**（OR 逻辑）：安全窗口（14 天）→ 访问密度分析 → 场景关联保护
+- **蒸馏**：降级前自动提取实体关系到知识图谱，原始对话被清除了结构骨架还在
+- **任务画布**：醒来时自动生成 Mermaid 任务路径图——agent 一眼看懂全局进度
 
-### 5️⃣ Knowledge Base & Graph
+### 🔄 学习与自我反思
 
-| Command | What it does |
-|---------|-------------|
-| `moyu kb list` | List all knowledge files |
-| `moyu kb search <query>` | Search knowledge files |
-| `moyu kb index` | Rebuild keyword index |
-| `moyu kb read <file>` | Read a knowledge file |
-| `moyu kg search <entity>` | Search knowledge graph for entities and relations |
+| 命令 | 说明 |
+|------|------|
+| `moyu learn <文本>` | 从用户纠正中学习（连续 3 次相同纠正 → 自动晋升为永久规则） |
+| `moyu detect <文本>` | 检测文本中的纠正信号 |
+| `moyu reflect` | 自我反思（跨时间关联分析、矛盾检测） |
 
-### 6️⃣ Session & Maintenance
+### 🔗 会话与维护
 
-| Command | What it does |
-|---------|-------------|
-| `moyu bridge` | Show session bridge status |
-| `moyu update` | Check for GitHub updates |
-| `moyu update now` | Download and apply update (requires password) |
-| `moyu demo` | Interactive demo of all capabilities |
-
----
-
-## 🔬 15 Capabilities — Full Details
-
-### 🛡️ Defense Layer (3 capabilities)
-
-| # | Capability | What it does |
-|---|-----------|-------------|
-| 1 | **Memory Self-Defense** | Prevents dangerous operations before they reach memory files. Password verification + auto-lockout + audit trail |
-| 2 | **Integrity Check & Recovery** | SHA256 manifest on wake + daily backups (3 days). Detects tampering — including data file changes |
-| 3 | **Forensic Analysis** | Analyzes what changed and why. Detects instruction override patterns, prompt injection, JSON corruption |
-
-### 🧠 Memory Layer (8 capabilities)
-
-| # | Capability | What it does |
-|---|-----------|-------------|
-| 4 | **TEMPR Semantic Retrieval** | Multi-strategy: FastEmbed semantic + BM25 keyword + time-weighted recency. Hybrid score_and_rank fusion |
-| 5 | **Working Memory** | Survives context compression — remembers the current task. Separate file, auto-injected |
-| 6 | **Knowledge Graph** | Auto-extracts entities & relations from memory. Local regex (no API key) or semantic (with API key) |
-| 7 | **User Profile** | Auto-extracts preferences, habits, facts from interaction |
-| 8 | **Deduplication** | SHA256 hash prevents duplicates |
-| 9 | **Context-Aware Compression** | Two-tier graduated compression (mild at 70%+, aggressive at 85%+). Original content preserved in refs/ |
-| 10 | **Forgetting Curve** | Parallel gating: safety window OR access density OR scene protection. Prevents context saturation without losing important memories |
-| 11 | **Memory Merge** | Detects related memories by keyword overlap and merges them. Originals preserved in expandable field |
-
-### 🔄 Learning Layer (2 capabilities)
-
-| # | Capability | What it does |
-|---|-----------|-------------|
-| 12 | **Learn from Corrections** | Auto-detects correction signals. Learns lessons after 3 repeats. Produces injectable behavioral rules |
-| 13 | **Self-Reflection** | Analyzes old memories on wake. Finds cross-time connections, contradictions, topic shifts |
-
-### 🔗 Integration Layer (2 capabilities)
-
-| # | Capability | What it does |
-|---|-----------|-------------|
-| 14 | **Cross-Session Bridge** | Carries context across sessions. `prefill.json` auto-syncs to system prompt. Every round logged |
-| 15 | **Auto-Update** | Checks GitHub for new releases. Applies in-place without touching memory_data or config |
+| 命令 | 说明 |
+|------|------|
+| `moyu bridge` | 查看跨会话桥接状态（prefill + current_context 双同步） |
+| `moyu update` | 检查 GitHub 更新（TOFU 校验） |
+| `moyu update now` | 下载并应用最新更新（需密码） |
+| `moyu demo` | 交互式能力展示 |
 
 ---
 
-## 🏆 What makes MOYU different
+## 🔬 25 项能力详情
 
-| | Hermes/OpenClaw (built-in) | Mem0 | **MOYU** |
-|--|---------------------------|------|----------|
-| Storage | Plain text files | Vector DB (SQLite/Faiss) | **JSON + SQLite FTS5** |
-| Search | Full text dump | Semantic (API/LLM) | **TEMPR triple strategy** |
-| Security | ❌ None | ❌ None | **✅ 3-layer defense chain** |
-| Lifecycle | ❌ None | ❌ None | **✅ Forgetting curve + compression** |
-| Working memory | ❌ None | ❌ None | **✅ Separate file, survives compression** |
-| Cross-session carry | Manual only | ❌ None | **✅ Auto-sync prefill.json** |
-| Platform lock-in | Tied to platform | Tied to SDK | **✅ Zero binding** |
-| API lock-in | Fixed provider | OpenAI only | **✅ Hot-swappable** |
-| Setup time | Out of box | 5 min + API key | **pip install, 30 seconds** |
-| Offline mode | Partial | Requires API key | **✅ Full local fallback** |
+### 🛡️ 防御层（8 项）
+
+| # | 能力 | 说明 |
+|---|------|------|
+| 1 | **内容安检闸** | 写入前拦截注入攻击（120+ 关键词，8 大类） |
+| 2 | **法医分析** | 检测注入攻击模式、JSON 结构损坏、文件篡改分析 |
+| 3 | **写入爆发防护** | 60s/30 次写入触发细粒度回滚 + 锁定 5 分钟 |
+| 4 | **工具调用环检测** | Agent 层拦截无限循环，SHA256 指纹 + 穷举周期 + 硬熔断 |
+| 5 | **PII 脱敏** | 中英双语：手机/身份证/银行卡/邮箱/SSN/IP，正则自动替换 |
+| 6 | **密码验证** | 危险操作前密码确认 + 失败 3 次锁定 30 分钟 |
+| 7 | **完整性校验与恢复** | SHA256 清单 + 每日备份保持 3 天，检测数据文件变化 |
+| 8 | **告警框架** | 内容安检/写入爆发双路告警 |
+
+### 🧠 记忆层（4 项）
+
+| # | 能力 | 说明 |
+|---|------|------|
+| 9 | **TEMPR 多策略检索** | 语义嵌入 + BM25 关键词 + 时间加权，混合评分排序 |
+| 10 | **FastEmbed 本地嵌入** | 本地 ONNX 向量化，无 API 依赖，自动降级 n-gram |
+| 11 | **SQLite FTS5** | 全文索引加速关键词检索 |
+| 12 | **MD5 去重** | 库内 + 批量双重去重 |
+
+### 📊 知识层（3 项）
+
+| # | 能力 | 说明 |
+|---|------|------|
+| 13 | **知识图谱** | 实体关系提取 + 时间快照查询 + 关系失效 + 完整时间线 + 知识蒸馏 |
+| 14 | **工作流知识库** | Markdown 知识文件索引 + 关键词搜索 |
+| 15 | **用户画像** | 自动提取偏好、习惯、事实 |
+
+### ⏳ 生命周期层（4 项）
+
+| # | 能力 | 说明 |
+|---|------|------|
+| 16 | **两级渐进压缩** | 70% 温和 / 85% 激进，原始内容保留可溯源（refs/） |
+| 17 | **任务画布** | 醒来时自动生成 Mermaid 任务路径图，一眼看懂全局进度 |
+| 18 | **遗忘曲线** | 三闸门（安全窗口/访问密度/场景保护）+ 知识蒸馏 |
+| 19 | **记忆合并** | 检测关键词重叠的相关记忆并合并，原始内容保留 |
+
+### 🔄 学习与反思（2 项）
+
+| # | 能力 | 说明 |
+|---|------|------|
+| 20 | **从纠正中学习** | 自动检测纠正信号（"不要/不对/应该是"），累计 3 次生成永久规则 |
+| 21 | **自我反思** | 启动时分析记忆库，发现跨时间关联、矛盾、主题偏移 |
+
+### 🔗 集成层（4 项）
+
+| # | 能力 | 说明 |
+|---|------|------|
+| 22 | **工作记忆** | 独立文件，上下文压缩后仍保留当前任务信息 |
+| 23 | **跨会话桥接** | 对话摘要自动同步 prefill + current_context，新会话续接旧对话 |
+| 24 | **自动更新** | 检查 GitHub 新版并原地更新（TOFU 校验），不覆盖用户数据和配置 |
+| 25 | **唤醒流程** | `moyu_wake` 全模块编排：校验→备份→遗忘→合并→反思→上下文→桥接 |
 
 ---
 
-## 🎮 When to use MOYU
-
-- **You want your AI Agent to remember things across conversations** — and you want it to be secure
-- **You keep hitting context limits** — and you need automatic compression that doesn't lose important memories
-- **You're switching between Hermes, OpenClaw, LangChain, or custom code** — and you want one memory solution for all
-- **You want zero infrastructure** — no Docker, no database, no registration
-
----
-
-## 📁 File Structure
+## 📁 文件结构
 
 ```
 moyu_toolkit/
-├── agent_memory.py          # Vector memory engine + TEMPR retrieval
-├── agent_memory_sqlite.py   # SQLite FTS5 search index
-├── active_context.py        # Working memory (survives compression)
-├── context_manager.py       # Context-aware compression
-├── forgetting_curve.py      # Memory lifecycle — two-stage gating
-├── memory_merge.py          # Topic-aware memory merge
-├── knowledge_graph.py       # Entity-relation knowledge graph
-├── knowledge_base.py        # Workflow knowledge base
-├── learner.py               # Learn from user corrections
-├── self_reflection.py       # Cross-time analysis
-├── security.py              # Memory self-defense — password + lockout
-├── session_bridge.py        # Cross-session carryover
-├── moyu.py                  # Unified CLI entry point
-├── moyu_wake.py             # Wake-up integration flow
-├── moyu_demo.py             # Interactive demo
-├── updater.py               # Auto-update
+├── agent_memory.py          # 向量记忆引擎 + TEMPR 检索
+├── agent_memory_sqlite.py   # SQLite FTS5 搜索索引
+├── active_context.py        # 工作记忆（压缩机存活）
+├── context_manager.py       # 上下文感知压缩 + 任务画布
+├── forgetting_curve.py      # 记忆生命周期——三闸门 + 知识蒸馏
+├── memory_merge.py          # 主题感知记忆合并
+├── knowledge_graph.py       # 实体关系知识图谱（含时间回溯）
+├── knowledge_base.py        # 工作流知识库
+├── learner.py               # 从纠正中学习 + 用户画像
+├── security.py              # 记忆自我保护——密码+锁定
+├── session_bridge.py        # 跨会话续接
+├── moyu.py                  # 统一 CLI 入口
+├── moyu_wake.py             # 启动集成流程
+├── moyu_demo.py             # 交互式演示
+├── updater.py               # 自动更新（TOFU 校验）
+├── self_reflection.py       # 自我反思
 ├── defense_toolkit/
-│   └── integrity_checker.py # File integrity + auto recovery
-├── config.yaml              # API keys & settings
+│   ├── integrity_checker.py # 文件完整性 + 自动恢复 + 法医分析 + 告警
+│   ├── forensic_patterns.json # 注入检测规则库（120+ 关键词）
+│   └── pii_redactor.py      # PII 脱敏（中英双语）
+├── tests/
+│   └── test_all.py          # 自动化测试（26 项）
+├── config.yaml              # API 密钥与设置
 └── requirements.txt
 ```
 
 ---
 
-## 🚀 Getting Started
+## 🏆 与其他方案的对比
 
-```bash
-# Install dependencies
-pip install numpy requests pyyaml
-
-# Optional — enables true semantic search
-pip install fastembed
-
-# Run your first search
-cd moyu_toolkit
-python3 moyu.py search "your first query"
-
-# Secure your memory
-python3 moyu.py init
-python3 moyu.py setup
-```
+| 维度 | 平台自带 | Mem0 | **MOYU** |
+|------|---------|------|----------|
+| 存储 | 纯文本文件 | 向量数据库 | **JSON + SQLite FTS5** |
+| 搜索 | 全文转储 | 语义（API/LLM） | **TEMPR 三重策略** |
+| 安全 | ❌ 无 | ❌ 无 | **✅ 四层防御链（安检/密码/校验/恢复）** |
+| PII 脱敏 | ❌ 无 | ❌ 无 | **✅ 中英双语（正则，零依赖）** |
+| 工具调用保护 | ❌ 无 | ❌ 无 | **✅ 环检测 + 硬熔断** |
+| 生命周期 | ❌ 无 | ❌ 无 | **✅ 遗忘曲线 + 上下文压缩 + 任务画布** |
+| 知识图谱 | ❌ 无 | ❌ 无 | **✅ 时间回溯 + 快照 + 蒸馏** |
+| 工作记忆 | ❌ 无 | ❌ 无 | **✅ 独立文件，压缩机存活** |
+| 跨会话续接 | 手动 | ❌ 无 | **✅ 自动同步 prefill + current_context** |
+| 平台绑定 | 绑定平台 | 绑定 SDK | **✅ 零绑定** |
+| API 绑定 | 固定平台 | OpenAI | **✅ 热切换** |
+| 部署 | 开箱即用 | 5 分钟 + API Key | **pip install，30 秒** |
+| 离线 | 部分 | 需要 API Key | **✅ 完全本地降级** |
 
 ---
 
-## 📜 License
+## 🎮 适合什么场景
+
+- 想让 AI Agent **记住跨会话的对话**，并且确保记忆安全
+- 经常遇到 **上下文超限**，需要自动压缩但不想丢失重要记忆
+- 关心 **PII 泄露**——不想把手机号、身份证号留在记忆文件里
+- 在 **Hermes、OpenClaw、LangChain 或自定义项目之间切换**，需要一个统一的记忆方案
+- 想要 **零基础设施**——不需要 Docker、不需要数据库、不需要注册
+
+---
+
+## 📜 许可证
 
 MIT

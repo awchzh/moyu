@@ -25,6 +25,16 @@ import statistics
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# ── 知识图谱蒸馏 ──
+# Called before demoting a memory: extracts entity relations from the summary
+# and writes them to the knowledge graph, so structural knowledge survives
+# the raw memory's removal. Non-intrusive import — no-op if module fails.
+try:
+    import knowledge_graph as kg
+    _KG_AVAILABLE = True
+except Exception:
+    _KG_AVAILABLE = False
+
 STORAGE = Path(os.environ.get("MOYU_STORAGE", str(Path(__file__).parent / "memory_data")))
 
 # ── Dynamic scene extraction (from memory summaries) ──
@@ -315,6 +325,40 @@ def _access_density_trend(timestamps: list) -> dict:
     return result
 
 
+# ── 蒸馏到知识图谱（可容忍降级前调用） ──
+
+def _distill_to_kg(m):
+    """Extract entity relations from a memory's summary before demotion.
+    
+    This is the key link in the memory→KG pipeline: when a raw memory is about
+    to be forgotten (demoted), its structural knowledge (entity relations) is
+    extracted and persisted in the knowledge graph, so it survives the raw
+    memory's removal.
+    
+    Only runs if:
+      - knowledge_graph module is available
+      - This memory hasn't been distilled before (_kg_distilled flag)
+      - Memory has a summary
+    
+    Sets _kg_distilled flag on the memory to prevent re-distillation.
+    """
+    global _KG_AVAILABLE
+    if not _KG_AVAILABLE:
+        return
+    if m.get("_kg_distilled"):
+        return
+    summary = m.get("summary", "")
+    if not summary:
+        return
+    timestamp = m.get("timestamp") or m.get("last_accessed")
+    try:
+        added = kg.distill_from_memory(summary, timestamp=timestamp)
+        if added > 0:
+            m["_kg_distilled"] = True
+    except Exception:
+        pass
+
+
 # ── Core API ─────────────────────────────────────────────────────────────────
 
 def track_access(memory_ids: list):
@@ -413,6 +457,7 @@ def run(context_pressure: bool = False) -> dict:
     kept_by_scene = []
     archived = []
     re_demoted = []
+    distilled_count = 0
 
     for m in memories:
         m_id = m.get("id", "?")
@@ -450,6 +495,13 @@ def run(context_pressure: bool = False) -> dict:
             kept_by_density.append(m_id)
             continue
 
+        # ── 蒸馏：降级前将结构化知识写入知识图谱 ──
+        old_len = len(kg._load().get("relations", [])) if _KG_AVAILABLE else 0
+        _distill_to_kg(m)
+        if _KG_AVAILABLE:
+            new_len = len(kg._load().get("relations", []))
+            distilled_count += max(0, new_len - old_len)
+
         # Passed all gates → demote
         m["demoted"] = True
         m["demoted_reason"] = f"not accessed in {days:.0f} days"
@@ -478,6 +530,7 @@ def run(context_pressure: bool = False) -> dict:
         "archivable": archived,
         "demote_threshold_days": demote_days,
         "archive_threshold_days": archive_days,
+        "distilled_to_kg": distilled_count,
     }
 
 
@@ -496,6 +549,9 @@ def summary() -> str:
         parts.append(f"场景保护保留 {ks} 条")
     if r.get("archivable"):
         parts.append(f"可归档 {len(r['archivable'])} 条")
+    dk = r.get("distilled_to_kg", 0)
+    if dk:
+        parts.append(f"知识蒸馏 {dk} 条")
     active = r.get("total_memories", 0) - len(r.get("demoted", []))
     parts.append(f"活跃记忆 {active} 条")
     return "，".join(parts)
