@@ -12,7 +12,7 @@ Usage:
     python3 integrity_checker.py init         # Initialize manifest
 """
 
-import json, os, hashlib, sys, shutil
+import json, os, hashlib, sys, shutil, re, base64
 from datetime import datetime
 
 BASE = os.environ.get("MOYU_STORAGE", os.path.join(os.path.dirname(__file__), "..", "memory_data"))
@@ -65,27 +65,69 @@ def init_manifest():
 _PATTERNS_CACHE = None
 
 def _load_patterns() -> list:
-    """Load injection patterns from forensic_patterns.json (cached after first load)."""
+    """Load injection patterns from forensic_patterns.json (cached after first load).
+    Returns list of (pattern_str, label, is_regex) tuples.
+    Patterns prefixed with 're:' use regex matching; others use plain substring matching.
+    Prefers Base64-encoded version (forensic_patterns_base64.json) when available."""
     global _PATTERNS_CACHE
     if _PATTERNS_CACHE is not None:
         return _PATTERNS_CACHE
-    patterns_path = os.path.join(os.path.dirname(__file__), "forensic_patterns.json")
+    toolkit = os.path.dirname(__file__)
+    
+    # Try Base64-encoded version first (packaged for SkillHub)
+    b64_path = os.path.join(toolkit, "forensic_patterns_base64.json")
+    if os.path.exists(b64_path):
+        try:
+            with open(b64_path) as f:
+                raw = json.load(f)
+            decoded = [(base64.b64decode(p).decode('utf-8'), l) for p, l in raw]
+            _PATTERNS_CACHE = []
+            for p, l in decoded:
+                if p.startswith("re:"):
+                    try:
+                        re.compile(p[3:].lstrip(), re.IGNORECASE | re.UNICODE)
+                        _PATTERNS_CACHE.append((p[3:].lstrip(), l, True))
+                    except re.error:
+                        _PATTERNS_CACHE.append((p[3:].lstrip(), l, False))
+                else:
+                    _PATTERNS_CACHE.append((p, l, False))
+            return _PATTERNS_CACHE
+        except Exception:
+            pass
+    
+    # Fallback to plaintext version (local dev / GitHub)
+    patterns_path = os.path.join(toolkit, "forensic_patterns.json")
     try:
         with open(patterns_path) as f:
             raw = json.load(f)
-        _PATTERNS_CACHE = [(p, l) for p, l in raw]
+        _PATTERNS_CACHE = []
+        for p, l in raw:
+            if p.startswith("re:"):
+                try:
+                    re.compile(p[3:].lstrip(), re.IGNORECASE | re.UNICODE)
+                    _PATTERNS_CACHE.append((p[3:].lstrip(), l, True))
+                except re.error:
+                    _PATTERNS_CACHE.append((p[3:].lstrip(), l, False))
+            else:
+                _PATTERNS_CACHE.append((p, l, False))
     except Exception:
         _PATTERNS_CACHE = []
     return _PATTERNS_CACHE
 
 
 def content_scan(text: str) -> list:
-    """Scan text for injection patterns. Returns list of detected labels (empty = clean)."""
+    """Scan text for injection patterns. Returns list of detected labels (empty = clean).
+    Supports regex (re: prefix) and plain substring patterns."""
     lower = text.lower()
     detected = []
-    for pattern, label in _load_patterns():
-        if pattern in lower and label not in detected:
-            detected.append(label)
+    for pattern, label, is_regex in _load_patterns():
+        if is_regex:
+            if re.search(pattern, lower):
+                if label not in detected:
+                    detected.append(label)
+        else:
+            if pattern in lower and label not in detected:
+                detected.append(label)
     return detected
 
 

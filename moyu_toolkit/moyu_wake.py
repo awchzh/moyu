@@ -52,6 +52,17 @@ def wake(dry_run: bool = False) -> str:
     status = cm.check_status()
     context_pressure = status.get("level") in ("auto", "over", "warn")
 
+    # ── Step 0a: Identity anchor — read SOUL.md and 暗号表 before anything else ──
+    identity_context = ""
+    try:
+        soul_lines = []
+        with open(os.path.join(TOOLKIT_DIR, "..", "SOUL.md")) as f:
+            for _ in range(3):
+                soul_lines.append(f.readline().strip())
+        identity_context = " | ".join(s for s in soul_lines if s)
+    except Exception:
+        identity_context = "我是墨白"
+    
     # ── Step 0b: Forgetting curve — only demote under pressure ──
     fc_result = fc.run(context_pressure=context_pressure)
     forget_msgs = []
@@ -145,6 +156,8 @@ def wake(dry_run: bool = False) -> str:
         return ""
 
     # Normal wake — compress
+    if identity_context:
+        bridge_text = f"⚓ {identity_context}\n{bridge_text}" if bridge_text else f"⚓ {identity_context}"
     bridge_context = bridge_text if bridge_text else None
     result, report = cm.build_context_prompt(
         working_memory=working_memory,
