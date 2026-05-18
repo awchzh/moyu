@@ -1,3 +1,7 @@
+alert:
+  channel: none
+  feishu_webhook: ''
+  webhook_url: ''
 api:
   api_key: your-api-key-here
   base_url: https://api.openai.com/v1
@@ -14,30 +18,22 @@ forgetting_curve:
   demote_days: 14
   density_window: 20
   enabled: true
-  scene_protection_days: 7
-  # User-defined scene labels (optional). Format:
-  #   scene_labels:
-  #     SceneName1: [keyword1, keyword2, keyword3]
-  #     SceneName2: [keyword4, keyword5]
-  # A memory is assigned to a scene if its summary matches any keyword.
-  # These take priority over auto-extracted keyword scenes.
-  # auto_scene_extraction: Enable/disable automatic keyword-based scene extraction (default: false)
-  # min_keyword_length: Minimum character length for auto-extracted scene keywords
   min_keyword_length: 3
+  scene_protection_days: 7
 learner:
   correction_signals:
-  - 不是
-  - 不对
-  - 错了
-  - 应该是
-  - 不要
-  - 记住
-  - 我告诉过你
-  - 我说过
-  - 别
-  - 别再
-  - 你又
-  - 还说
+  - "\u4E0D\u662F"
+  - "\u4E0D\u5BF9"
+  - "\u9519\u4E86"
+  - "\u5E94\u8BE5\u662F"
+  - "\u4E0D\u8981"
+  - "\u8BB0\u4F4F"
+  - "\u6211\u544A\u8BC9\u8FC7\u4F60"
+  - "\u6211\u8BF4\u8FC7"
+  - "\u522B"
+  - "\u522B\u518D"
+  - "\u4F60\u53C8"
+  - "\u8FD8\u8BF4"
   - 'no'
   - wrong
   - don't
@@ -59,14 +55,10 @@ memory:
     recency: 0.2
     semantic: 0.5
 security:
+  encryption:
+    enabled: false
+  isolation:
+    default_user: default
+    enabled: false
   lockout_minutes: 30
   lockout_threshold: 3
-
-# Alert configuration (for tamper detection notifications)
-# channel: none | feishu | webhook
-# feishu_webhook: paste your Feishu bot webhook URL here
-# webhook_url: custom HTTP endpoint that accepts JSON POST
-alert:
-  channel: none
-  feishu_webhook: ""
-  webhook_url: ""

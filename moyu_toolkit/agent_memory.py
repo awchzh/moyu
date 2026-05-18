@@ -27,6 +27,52 @@ import numpy as np
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
+# ==================== Optional Security Modules ====================
+
+# User isolation (optional — config.yaml > security.isolation.enabled)
+_ISOLATION = None
+def _get_isolation():
+    global _ISOLATION
+    if _ISOLATION is None:
+        try:
+            from defense_toolkit.isolation import get_storage_path, get_user
+            _ISOLATION = {"get_storage_path": get_storage_path, "get_user": get_user}
+        except Exception:
+            _ISOLATION = False
+    return _ISOLATION or None
+
+# Encryption (optional — config.yaml > security.encryption.enabled + password)
+_ENCRYPTION = None
+def _get_encryption():
+    global _ENCRYPTION
+    if _ENCRYPTION is None:
+        try:
+            from defense_toolkit.encrypt import encrypt_bytes, decrypt_bytes, is_encrypted
+            _ENCRYPTION = {"encrypt": encrypt_bytes, "decrypt": decrypt_bytes, "is_encrypted": is_encrypted}
+        except Exception:
+            _ENCRYPTION = False
+    return _ENCRYPTION or None
+
+def _get_encryption_password() -> str:
+    """Read encryption password from env var MOYU_ENCRYPTION_PASSWORD first,
+    then fall back to config.yaml (legacy)."""
+    # Priority 1: environment variable (recommended, avoids plaintext in config)
+    env_pw = os.environ.get("MOYU_ENCRYPTION_PASSWORD", "")
+    if env_pw:
+        return env_pw
+    # Priority 2: config.yaml (legacy)
+    try:
+        import yaml
+        cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
+        with open(cfg_path) as f:
+            cfg = yaml.safe_load(f) or {}
+        enc_cfg = cfg.get("security", {}).get("encryption", {})
+        if enc_cfg.get("enabled", False):
+            return enc_cfg.get("password", "")
+    except Exception:
+        pass
+    return ""
+
 # ==================== SQLite FTS5 ====================
 from agent_memory_sqlite import _fts_search
 
@@ -107,8 +153,12 @@ FASTEMBED_DEFAULT_MODEL = "BAAI/bge-small-zh-v1.5"  # 384-dim, Chinese + English
 
 
 def _storage_path(*parts: str) -> str:
-    """Get storage path"""
-    path = os.path.join(STORAGE_PATH, *parts)
+    """Get storage path, optionally with user isolation."""
+    base = STORAGE_PATH
+    iso = _get_isolation()
+    if iso:
+        base = iso["get_storage_path"](base)
+    path = os.path.join(base, *parts)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     return path
 
@@ -549,8 +599,27 @@ def _save_index(index: dict):
 def _load_memories() -> list:
     path = _storage_path("conversation_memory.json")
     if os.path.exists(path):
-        with open(path) as f:
-            return json.load(f)
+        # Encryption-aware: if encryption is configured, try decryption first
+        enc = _get_encryption()
+        password = _get_encryption_password()
+        if enc and password:
+            try:
+                from defense_toolkit.encrypt import decrypt_file
+                raw = decrypt_file(path, password)
+                return json.loads(raw)
+            except Exception:
+                pass  # Fall through to normal read
+        # Normal read (not encrypted, or enc configured but no password)
+        try:
+            with open(path, 'rb') as f:
+                raw = f.read()
+            # If file is encrypted but we have no password configured, warn
+            if raw.startswith(b'ENCv1:'):
+                print(f"🔐 {os.path.basename(path)} is encrypted — configure encryption password to read")
+                return []
+            return json.loads(raw.decode())
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return []  # Corrupted or empty file
     return []
 
 
@@ -561,6 +630,22 @@ def _save_memories(memories: list):
         return
     _record_write()  # record BEFORE write
     path = _storage_path("conversation_memory.json")
+    
+    # Encryption-aware: encrypt before writing if configured
+    enc = _get_encryption()
+    password = _get_encryption_password()
+    if enc and password:
+        try:
+            from defense_toolkit.encrypt import encrypt_bytes
+            data = json.dumps(memories, ensure_ascii=False, indent=2)
+            encrypted = encrypt_bytes(data.encode('utf-8'), password)
+            with open(path, 'wb') as f:
+                f.write(encrypted)
+            return
+        except Exception:
+            pass  # Fall through to plaintext write
+    
+    # Default (no encryption)
     with open(path, 'w') as f:
         json.dump(memories, f, ensure_ascii=False, indent=2)
 

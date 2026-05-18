@@ -77,6 +77,18 @@
 
 ---
 
+## v2.4.2 — 已发布 (2026-05-17)
+
+### 新增功能
+- **用户隔离（可选层）** — defense_toolkit/isolation.py，按 user_id 分目录存储，config.yaml 开关默认关闭
+- **加密存储（可选层）** — defense_toolkit/encrypt.py，AES-256-GCM + PBKDF2 密钥派生，`pip install cryptography` 后启用，密码优先读取环境变量 MOYU_ENCRYPTION_PASSWORD
+- **API Key 脱敏** — pii_redactor.py 新增正则覆盖 sk-/ark-/AKID/ghp_ 等主流 API Key 格式
+
+### 文档
+- **安全能力边界说明** — README.md / SKILL.md 新增诚实评估表，说明各对抗层级的覆盖率和为什么不追求顶层
+
+---
+
 ## 待规划
 
 - （等用户指方向）

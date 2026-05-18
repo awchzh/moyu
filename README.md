@@ -4,7 +4,7 @@
 
 MOYU is a lightweight memory toolkit that gives your Agent a **secure, self-managing, cross-session persistent** memory system. Pure Python, zero infrastructure, plug-and-play with one folder. Works with Hermes, OpenClaw, LangChain, AutoGen, or any custom Python project.
 
-**v2.4.0** — 25 capabilities, 6 categories.
+**v2.4.1** — Security boundary clarified. User isolation & encryption available (opt-in).
 
 ---
 
@@ -31,6 +31,26 @@ python3 moyu.py init          # Initialize file integrity protection
 
 ---
 
+## 🛡️ Security Capability — What MOYU Does and Doesn't Cover
+
+MOYU's defense chain is a **layered deterrent**, not a silver bullet. Honest assessment by threat level:
+
+| Level | Threat | Coverage | How |
+|-------|--------|----------|-----|
+| 🟢 | Accidental misuse (fat-finger, mis-script) | **~90%** | Password gate + burst guard + integrity check + daily backup |
+| 🟢 | Script-kiddie injection (known patterns) | **~70%** | Content gate (422 patterns + regex combos) + loop detection |
+| 🟡 | Simple prompt injection (standard variants) | **~60%** | Regex covers (forget\|ignore\|skip)×(previous\|all\|your)×(instructions\|rules) |
+| 🟠 | Professional adversarial injection (targeted bypass) | **~20%** | Keyword-based gates can't catch every novel variant |
+| 🔴 | Semantic-level injection (metaphor, abstraction, no keywords) | **~0%** | Requires LLM-level semantic understanding — not regex territory |
+
+**Why we don't chase the top levels:** LLM-based content moderation on every write would destroy the zero-config experience. Semantic ambiguity means you either over-block (user frustration) or under-block (useless). No open-source tool in this space claims to block semantic injection.
+
+**MOYU's strength is in the combination:** content gate + PII redaction + write burst guard + forensic analysis + password gate + integrity check + auto-restore + loop detection — unique layers no other memory toolkit offers.
+
+**Additional opt-in security** (config.yaml, disabled by default): user isolation (per-directory storage) & AES-256-GCM file encryption (`pip install cryptography`).
+
+---
+
 ## 📋 Command Reference
 
 All commands through a single entry point:
@@ -39,7 +59,7 @@ All commands through a single entry point:
 python3 moyu.py <command> [arguments]
 ```
 
-### 🛡️ Defense & Security (MOYU's competitive edge)
+### 🛡️ Defense & Security
 
 | Command | Description |
 |------|------|
@@ -61,7 +81,7 @@ Layer 4 (post-op): Auto-restore → restore from daily backup
 **Additional defenses:**
 - **Write burst protection** — >30 writes in 60s triggers fine-grained rollback + 5-minute lock + alert
 - **Tool call loop detection** — Intercepts infinite loops at agent layer, SHA256 fingerprint + cycle detection + hard abort
-- **PII redaction** — Chinese & international phone/ID/bank cards + email/SSN/credit cards/IPs, regex-based auto-replacement
+- **PII redaction** — Chinese & international phone/ID/bank cards + email/SSN/credit cards/IPs/API keys, regex-based auto-replacement
 
 ### 🧠 Memory & Retrieval
 
@@ -136,14 +156,14 @@ Forgetting curve + knowledge distillation:
 
 | # | Capability | Description |
 |---|-----------|------|
-| 1 | **Content Security Gate** | Blocks injection attacks before writing (120+ patterns, 8 categories) |
+| 1 | **Content Security Gate** | Blocks injection attacks before writing (422 patterns + regex combos, 8 categories) |
 | 2 | **Forensic Analysis** | Detects injection patterns, JSON corruption, file tampering |
 | 3 | **Write Burst Protection** | >30 writes/60s triggers fine-grained rollback + 5-min lock |
-| 4 | **Tool Call Loop Detection** | Agent-level infinite loop interception, SHA256 fingerprint + exhaustive cycle scan + hard abort |
-| 5 | **PII Redaction** | Bilingual: Chinese & international phones, ID cards, bank cards, emails, SSNs, IPs — regex-based |
+| 4 | **Tool Call Loop Detection** | Runtime-level infinite loop interception, SHA256 fingerprint + exhaustive cycle scan + hard abort |
+| 5 | **PII Redaction** | Bilingual: Chinese & international phones, ID cards, bank cards, emails, SSNs, IPs, API keys — regex-based, no deps |
 | 6 | **Password Verification** | Pre-op confirmation + auto-lock after 3 failures (30 min) |
 | 7 | **Integrity Check & Recovery** | SHA256 manifest + daily backups (3-day retention) |
-| 8 | **Alert Framework** | Content gate / write burst dual alert channels |
+| 8 | **User Isolation & Encryption** (opt-in) | Per-user storage directories + AES-256-GCM file encryption (`pip install cryptography`) |
 
 ### 🧠 Memory Layer (4)
 
@@ -211,8 +231,10 @@ moyu_toolkit/
 ├── self_reflection.py       # Self-reflection
 ├── defense_toolkit/
 │   ├── integrity_checker.py # File integrity + auto-recovery + forensic analysis + alerts
-│   ├── forensic_patterns.json # Injection detection rule base (120+ patterns)
-│   └── pii_redactor.py      # PII redaction (bilingual)
+│   ├── forensic_patterns.json # Injection detection rule base (422 patterns + regex)
+│   ├── pii_redactor.py      # PII redaction (bilingual, API key support)
+│   ├── isolation.py         # User isolation (opt-in)
+│   └── encrypt.py           # AES-256-GCM file encryption (opt-in, requires cryptography)
 ├── tests/
 │   └── test_all.py          # Automated tests (26 items)
 ├── config.yaml              # API keys & settings
@@ -245,7 +267,7 @@ moyu_toolkit/
 
 - Want your AI Agent to **remember cross-session conversations** with real security
 - Frequently hit **context limits**, need auto-compression without losing important memories
-- Concerned about **PII leaks** — don't want phone numbers, IDs lingering in memory files
+- Concerned about **PII leaks** — don't want phone numbers, IDs, API keys lingering in memory files
 - Switching between **Hermes, OpenClaw, LangChain, or custom projects**, need a unified memory solution
 - Want **zero infrastructure** — no Docker, no databases, no signups
 

@@ -76,6 +76,11 @@ _EN_PATTERNS = [
     (r"(?<!\d)(\d{3})[-–—](\d{2})[-–—](\d{4})(?!\d)",
      lambda m: f"***-**-{m.group(3)}",
      "ssn"),
+
+    # API Key: sk-xxx / ark-xxx / AKIDxxx / ghp_xxx / gho_xxx / ghu_xxx → 保留前后4位
+    (r"(?<![a-zA-Z0-9])((?:sk-|ark-|AKID|AKTP|ghp_|gho_|ghu_)[a-zA-Z0-9_-]{16,})(?![a-zA-Z0-9_-])",
+     lambda m: m.group(1)[:4] + "***" + m.group(1)[-4:],
+     "api_key"),
 ]
 
 
@@ -149,6 +154,9 @@ def demo() -> dict:
         "日本电话+81 90-1234-5678",
         "香港电话+852 9123 4567",
         "带括号的美式(212) 555-1212",
+        "豆包API KEY：ark-424a098e-5717-4529-a560-85e432fef418-dec3f",
+        "OpenAI Key: sk-proj-abcdefghijklmnopqrstuvwx",
+        "GitHub token: ghp_abcdefghijklmnopqrstuvwxyz123456",
         # Clean — should not trigger
         "我今天工作很忙",
         "项目版本号是2.3.0",
